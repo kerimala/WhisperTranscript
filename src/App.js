@@ -183,9 +183,10 @@ function App() {
           isTranscribing={isTranscribing}
           progress={transcriptionProgress}
         />
-        {showSettings && (
-          <Settings onClose={handleCloseSettings} />
-        )}
+        <Settings 
+          isOpen={showSettings} 
+          onClose={handleCloseSettings} 
+        />
       </div>
     </ThemeProvider>
   );
