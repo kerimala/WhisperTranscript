@@ -241,20 +241,20 @@
           {
             "id": 1,
             "title": "Python Service Setup",
-            "description": "Set up the Python backend service with proper configuration, API endpoints, and communication protocols for integration with the Electron frontend",
+            "description": "Set up the Python backend service with proper configuration, dependencies, and API endpoints to handle core business logic and data processing",
             "dependencies": [],
-            "details": "Configure Python service architecture, establish REST/WebSocket APIs, implement error handling, set up logging, and ensure proper service initialization and shutdown procedures",
+            "details": "Configure Python environment, install required packages, create service architecture with proper error handling, logging, and API interface for communication with Electron frontend",
             "status": "pending",
             "testStrategy": ""
           },
           {
             "id": 2,
             "title": "Electron Process Management",
-            "description": "Implement Electron process management to handle Python service lifecycle, inter-process communication, and cross-language integration",
+            "description": "Implement Electron application with process lifecycle management to spawn, monitor, and communicate with the Python service",
             "dependencies": [
               1
             ],
-            "details": "Create process spawning and monitoring for Python service, establish IPC channels, implement error recovery mechanisms, handle service startup/shutdown coordination, and manage cross-platform process lifecycle",
+            "details": "Create Electron main process to manage Python subprocess, implement IPC communication channels, handle process startup/shutdown, error recovery, and cross-platform process management",
             "status": "pending",
             "testStrategy": ""
           }
