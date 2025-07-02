@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   // App info
   getVersion: () => ipcRenderer.invoke('app-version'),
+  registerShortcut: (shortcut) => ipcRenderer.invoke('register-shortcut', shortcut),
   
   // Dialog methods
   showMessageBox: (options) => ipcRenderer.invoke('show-message-box', options),

@@ -13,6 +13,9 @@ const Settings = ({ isOpen, onClose }) => {
   const [selectedModel, setSelectedModel] = useState('base');
   const [isCheckingLocalService, setIsCheckingLocalService] = useState(false);
   const [showModelManager, setShowModelManager] = useState(false);
+  const [hotkey, setHotkey] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [hotkeyStatus, setHotkeyStatus] = useState('');
 
   useEffect(() => {
     if (isOpen) {
@@ -20,7 +23,38 @@ const Settings = ({ isOpen, onClose }) => {
       loadSettings();
       checkLocalServiceStatus();
     }
-  }, [isOpen]);
+
+    const handleKeyDown = (e) => {
+      if (!isRecording) return;
+      e.preventDefault();
+      const key = e.key.toUpperCase();
+      const modifiers = [];
+      if (e.ctrlKey) modifiers.push('Control');
+      if (e.altKey) modifiers.push('Alt');
+      if (e.shiftKey) modifiers.push('Shift');
+      if (e.metaKey) modifiers.push('Command');
+
+      // For single keys like 'F5', 'Enter', etc.
+      const specialKeys = ['Control', 'Alt', 'Shift', 'Command', 'Meta'];
+      if (specialKeys.includes(e.key)) {
+        return; // Don't set just a modifier as the hotkey
+      }
+
+      const newHotkey = [...modifiers, key].join('+');
+      setHotkey(newHotkey);
+      setIsRecording(false);
+    };
+
+    if (isRecording) {
+      window.addEventListener('keydown', handleKeyDown);
+    } else {
+      window.removeEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, isRecording]);
 
   const loadSettings = async () => {
     try {
@@ -31,8 +65,30 @@ const Settings = ({ isOpen, onClose }) => {
       // Load saved model selection
       const savedModel = localStorage.getItem('selectedModel') || 'base';
       setSelectedModel(savedModel);
+
+      const savedHotkey = localStorage.getItem('globalHotkey') || 'CommandOrControl+Shift+D';
+      setHotkey(savedHotkey);
     } catch (error) {
       console.error('Error loading settings:', error);
+    }
+  };
+
+  const handleSaveHotkey = async () => {
+    if (!hotkey) {
+      setHotkeyStatus('Please set a hotkey.');
+      return;
+    }
+    try {
+      const success = await window.electronAPI.registerShortcut(hotkey);
+      if (success) {
+        localStorage.setItem('globalHotkey', hotkey);
+        setHotkeyStatus(`Hotkey '${hotkey}' saved successfully!`);
+      } else {
+        setHotkeyStatus(`Failed to register '${hotkey}'. It might be in use.`);
+      }
+    } catch (error) {
+      console.error('Error saving hotkey:', error);
+      setHotkeyStatus('Error saving hotkey.');
     }
   };
 
@@ -215,7 +271,30 @@ const Settings = ({ isOpen, onClose }) => {
         </div>
 
         <div className="settings-content">
-          <h2>Settings</h2>
+          <div className="settings-section">
+            <h2>Global Hotkey</h2>
+            <div className="hotkey-setting">
+              <p>Set a global shortcut to start/stop dictation from anywhere.</p>
+              <div className="hotkey-input-container">
+                <input
+                  type="text"
+                  readOnly
+                  value={isRecording ? 'Recording...' : hotkey}
+                  className={`hotkey-input ${isRecording ? 'recording' : ''}`}
+                  placeholder="Click to set hotkey"
+                />
+                <button 
+                  onClick={() => setIsRecording(!isRecording)}
+                  className="record-button"
+                >
+                  {isRecording ? 'Cancel' : 'Set Hotkey'}
+                </button>
+              </div>
+              <button onClick={handleSaveHotkey} className="save-button">Save Hotkey</button>
+              {hotkeyStatus && <p className="hotkey-status">{hotkeyStatus}</p>}
+            </div>
+          </div>
+
           
           <div className="setting-section">
             <h3>Transcription Mode</h3>

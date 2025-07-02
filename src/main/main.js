@@ -1,7 +1,7 @@
 // Load environment variables from .env file
 require('dotenv').config();
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -181,8 +181,24 @@ ipcMain.handle('whisper-local-get-status', async () => {
   // Show window when ready to prevent visual flash
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    
 
+    // Register a global shortcut
+    const ret = globalShortcut.register('CommandOrControl+Shift+D', () => {
+      console.log('Global shortcut CommandOrControl+Shift+D pressed');
+      // Bring the window to the front and focus it
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        // Optionally, send an event to the renderer process
+        mainWindow.webContents.send('global-shortcut-triggered', 'dictation-toggle');
+      }
+    });
+
+    if (!ret) {
+      console.log('Global shortcut registration failed');
+    } else {
+      console.log('Global shortcut registered successfully');
+    }
   });
 
   // Handle window closed
@@ -196,6 +212,37 @@ ipcMain.handle('whisper-local-get-status', async () => {
     return { action: 'deny' };
   });
 }
+
+// IPC handler for registering a custom shortcut
+ipcMain.handle('register-shortcut', (event, shortcut) => {
+  if (globalShortcut.isRegistered(shortcut)) {
+    return false; // Already registered
+  }
+  try {
+    // Unregister all previous shortcuts before registering a new one.
+    globalShortcut.unregisterAll();
+
+    const ret = globalShortcut.register(shortcut, () => {
+      console.log(`Global shortcut ${shortcut} pressed`);
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        mainWindow.webContents.send('global-shortcut-triggered', 'dictation-toggle');
+      }
+    });
+
+    if (!ret) {
+      console.log(`Registration of shortcut ${shortcut} failed`);
+      return false;
+    }
+
+    console.log(`Shortcut ${shortcut} registered successfully`);
+    return true;
+  } catch (error) {
+    console.error('Failed to register shortcut:', error);
+    return false;
+  }
+});
 
 // Initialize Whisper clients
 function initializeWhisperClients() {
@@ -687,6 +734,9 @@ if (!gotTheLock) {
 // Graceful shutdown handlers
 const gracefulShutdown = async () => {
   console.log('Initiating graceful shutdown...');
+
+  // Unregister all shortcuts.
+  globalShortcut.unregisterAll();
   
   try {
     // Stop service registry health monitoring
