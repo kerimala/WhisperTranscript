@@ -32,34 +32,27 @@ function createWindow() {
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default'
   });
 
-// Mode switching handlers
+// IPC handlers for local Whisper service
 ipcMain.handle('whisper-get-mode', async () => {
-  return { mode: currentMode };
+  return currentMode;
 });
 
 ipcMain.handle('whisper-set-mode', async (event, mode) => {
-  try {
-    if (mode !== 'cloud' && mode !== 'local') {
-      throw new Error('Invalid mode. Must be "cloud" or "local"');
-    }
-    
+  if (mode === 'cloud' || mode === 'local') {
     currentMode = mode;
-    console.log(`Switched to ${mode} mode`);
+    console.log(`[Main] Whisper mode set to: ${mode}`);
     return { success: true, mode: currentMode };
-  } catch (error) {
-    console.error('Error setting mode:', error);
-    return { success: false, error: error.message };
+  } else {
+    return { success: false, error: 'Invalid mode. Must be "cloud" or "local"' };
   }
 });
 
-// Local service handlers
 ipcMain.handle('whisper-local-check-service', async () => {
   try {
-    const isAvailable = await whisperLocalClient.isServiceAvailable();
-    return { available: isAvailable };
+    const isAvailable = await whisperLocalClient.isAvailable();
+    return { success: true, available: isAvailable };
   } catch (error) {
-    console.error('Error checking local service:', error);
-    return { available: false, error: error.message };
+    return { success: false, error: error.message };
   }
 });
 
@@ -68,17 +61,15 @@ ipcMain.handle('whisper-local-install-dependencies', async () => {
     const result = await whisperLocalClient.installDependencies();
     return result;
   } catch (error) {
-    console.error('Error installing dependencies:', error);
     return { success: false, error: error.message };
   }
 });
 
 ipcMain.handle('whisper-local-get-models', async () => {
   try {
-    const models = await whisperLocalClient.getAvailableModels();
-    return { success: true, models };
+    const result = await whisperLocalClient.getAvailableModels();
+    return result;
   } catch (error) {
-    console.error('Error getting local models:', error);
     return { success: false, error: error.message };
   }
 });
@@ -88,7 +79,6 @@ ipcMain.handle('whisper-local-change-model', async (event, modelName) => {
     const result = await whisperLocalClient.changeModel(modelName);
     return result;
   } catch (error) {
-    console.error('Error changing local model:', error);
     return { success: false, error: error.message };
   }
 });
@@ -96,9 +86,45 @@ ipcMain.handle('whisper-local-change-model', async (event, modelName) => {
 ipcMain.handle('whisper-local-test-service', async () => {
   try {
     const result = await whisperLocalClient.testService();
-    return result;
+    return { success: true, ready: result };
   } catch (error) {
-    console.error('Error testing local service:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Process management handlers
+ipcMain.handle('whisper-local-start-service', async () => {
+  try {
+    const result = await whisperLocalClient.startService();
+    return { success: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-stop-service', async () => {
+  try {
+    const result = await whisperLocalClient.stopService();
+    return { success: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-restart-service', async () => {
+  try {
+    const result = await whisperLocalClient.restartService();
+    return { success: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-get-status', async () => {
+  try {
+    const status = whisperLocalClient.getServiceStatus();
+    return { success: true, status };
+  } catch (error) {
     return { success: false, error: error.message };
   }
 });

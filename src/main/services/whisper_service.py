@@ -10,8 +10,13 @@ import json
 import argparse
 import tempfile
 import logging
+import signal
+import time
+import threading
 from pathlib import Path
 from typing import Optional, Dict, Any
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 
 try:
     import whisper
@@ -197,17 +202,198 @@ class WhisperLocalService:
                 "success": False,
                 "error": f"Failed to change model: {str(e)}"
             }
+    
+    def test_service(self) -> Dict[str, Any]:
+        """
+        Test if the service is working properly
+        
+        Returns:
+            Dict containing test result
+        """
+        try:
+            if not self.model:
+                if not self.load_model():
+                    return {
+                        "success": False,
+                        "error": "Failed to load model for testing"
+                    }
+            
+            return {
+                "success": True,
+                "message": f"Service is ready with model '{self.model_name}'",
+                "model": self.model_name
+            }
+        except Exception as e:
+            logger.error(f"Service test failed: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Service test failed: {str(e)}"
+            }
+
+class WhisperDaemonHandler(BaseHTTPRequestHandler):
+    """
+    HTTP request handler for daemon mode
+    """
+    
+    def __init__(self, *args, whisper_service=None, **kwargs):
+        self.whisper_service = whisper_service
+        super().__init__(*args, **kwargs)
+    
+    def do_POST(self):
+        """Handle POST requests"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            request_data = json.loads(post_data.decode('utf-8'))
+            
+            command = request_data.get('command')
+            
+            if command == 'transcribe':
+                audio_path = request_data.get('audio_path')
+                options = request_data.get('options', {})
+                result = self.whisper_service.transcribe_audio(audio_path, options)
+            elif command == 'test':
+                result = self.whisper_service.test_service()
+            elif command == 'models':
+                result = self.whisper_service.get_available_models()
+            elif command == 'change_model':
+                model_name = request_data.get('model_name')
+                result = self.whisper_service.change_model(model_name)
+            else:
+                result = {
+                    "success": False,
+                    "error": f"Unknown command: {command}"
+                }
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode('utf-8'))
+            
+        except Exception as e:
+            logger.error(f"Request handling error: {str(e)}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            error_response = {
+                "success": False,
+                "error": f"Request handling error: {str(e)}"
+            }
+            self.wfile.write(json.dumps(error_response).encode('utf-8'))
+    
+    def do_GET(self):
+        """Handle GET requests"""
+        try:
+            parsed_url = urlparse(self.path)
+            
+            if parsed_url.path == '/health':
+                result = self.whisper_service.test_service()
+            elif parsed_url.path == '/models':
+                result = self.whisper_service.get_available_models()
+            else:
+                result = {
+                    "success": False,
+                    "error": "Unknown endpoint"
+                }
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode('utf-8'))
+            
+        except Exception as e:
+            logger.error(f"GET request error: {str(e)}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            error_response = {
+                "success": False,
+                "error": f"GET request error: {str(e)}"
+            }
+            self.wfile.write(json.dumps(error_response).encode('utf-8'))
+    
+    def log_message(self, format, *args):
+        """Override to use our logger"""
+        logger.info(f"{self.address_string()} - {format % args}")
+
+class WhisperDaemon:
+    """
+    Daemon mode for Whisper service
+    """
+    
+    def __init__(self, model_name="base", port=8765):
+        self.model_name = model_name
+        self.port = port
+        self.whisper_service = WhisperLocalService(model_name)
+        self.server = None
+        self.running = False
+        
+        # Set up signal handlers
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGINT, self.signal_handler)
+    
+    def signal_handler(self, signum, frame):
+        """Handle shutdown signals"""
+        logger.info(f"Received signal {signum}, shutting down...")
+        self.stop()
+    
+    def start(self):
+        """Start the daemon server"""
+        try:
+            logger.info(f"Starting Whisper daemon on port {self.port}...")
+            
+            # Pre-load the model
+            logger.info("Pre-loading Whisper model...")
+            if not self.whisper_service.load_model():
+                logger.error("Failed to pre-load model")
+                return False
+            
+            # Create handler with service instance
+            def handler(*args, **kwargs):
+                return WhisperDaemonHandler(*args, whisper_service=self.whisper_service, **kwargs)
+            
+            self.server = HTTPServer(('localhost', self.port), handler)
+            self.running = True
+            
+            logger.info(f"Whisper daemon started successfully on port {self.port}")
+            logger.info(f"Model: {self.model_name}")
+            logger.info("Ready to accept requests...")
+            
+            # Start server in a separate thread
+            server_thread = threading.Thread(target=self.server.serve_forever)
+            server_thread.daemon = True
+            server_thread.start()
+            
+            # Keep main thread alive
+            while self.running:
+                time.sleep(1)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start daemon: {str(e)}")
+            return False
+    
+    def stop(self):
+        """Stop the daemon server"""
+        self.running = False
+        if self.server:
+            logger.info("Stopping daemon server...")
+            self.server.shutdown()
+            self.server.server_close()
+            logger.info("Daemon stopped")
 
 def main():
     """
     Command line interface for the Whisper service
     """
     parser = argparse.ArgumentParser(description="Local Whisper Transcription Service")
-    parser.add_argument("command", choices=["transcribe", "models", "test"], help="Command to execute")
+    parser.add_argument("command", choices=["transcribe", "models", "test", "daemon"], help="Command to execute")
     parser.add_argument("--audio", "-a", help="Path to audio file (for transcribe command)")
     parser.add_argument("--model", "-m", default="base", help="Whisper model to use (default: base)")
     parser.add_argument("--language", "-l", help="Language code (auto-detect if not specified)")
     parser.add_argument("--output", "-o", help="Output file path (JSON format)")
+    parser.add_argument("--port", "-p", type=int, default=8765, help="Port for daemon mode (default: 8765)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
@@ -215,39 +401,42 @@ def main():
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Initialize service
-    service = WhisperLocalService(model_name=args.model)
-    
-    if args.command == "transcribe":
-        if not args.audio:
-            print("Error: --audio argument is required for transcribe command")
-            sys.exit(1)
-        
-        options = {}
-        if args.language:
-            options["language"] = args.language
-        
-        result = service.transcribe_audio(args.audio, options)
-        
-        if args.output:
-            with open(args.output, 'w', encoding='utf-8') as f:
-                json.dump(result, f, indent=2, ensure_ascii=False)
-            print(f"Result saved to: {args.output}")
-        else:
-            print(json.dumps(result, indent=2, ensure_ascii=False))
-    
-    elif args.command == "models":
-        result = service.get_available_models()
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+    if args.command == "daemon":
+        # Start daemon mode
+        daemon = WhisperDaemon(model_name=args.model, port=args.port)
+        daemon.start()
     
     elif args.command == "test":
-        print("Testing Whisper service...")
-        if service.load_model():
-            print(f"✓ Model '{args.model}' loaded successfully")
-            print("✓ Service is ready for transcription")
-        else:
-            print(f"✗ Failed to load model '{args.model}'")
-            sys.exit(1)
+        # Test service functionality
+        service = WhisperLocalService(model_name=args.model)
+        result = service.test_service()
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    
+    else:
+        # Initialize service for other commands
+        service = WhisperLocalService(model_name=args.model)
+        
+        if args.command == "transcribe":
+            if not args.audio:
+                print("Error: --audio argument is required for transcribe command")
+                sys.exit(1)
+            
+            options = {}
+            if args.language:
+                options["language"] = args.language
+            
+            result = service.transcribe_audio(args.audio, options)
+            
+            if args.output:
+                with open(args.output, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
+                print(f"Result saved to: {args.output}")
+            else:
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+        
+        elif args.command == "models":
+            result = service.get_available_models()
+            print(json.dumps(result, indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()

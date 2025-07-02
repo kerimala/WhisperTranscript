@@ -35,7 +35,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       installDependencies: () => ipcRenderer.invoke('whisper-local-install-dependencies'),
       getModels: () => ipcRenderer.invoke('whisper-local-get-models'),
       changeModel: (modelName) => ipcRenderer.invoke('whisper-local-change-model', modelName),
-      testService: () => ipcRenderer.invoke('whisper-local-test-service')
+      testService: () => ipcRenderer.invoke('whisper-local-test-service'),
+      startService: () => ipcRenderer.invoke('whisper-local-start-service'),
+      stopService: () => ipcRenderer.invoke('whisper-local-stop-service'),
+      restartService: () => ipcRenderer.invoke('whisper-local-restart-service'),
+      getStatus: () => ipcRenderer.invoke('whisper-local-get-status')
     }
   },
   
