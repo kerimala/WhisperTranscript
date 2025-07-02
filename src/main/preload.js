@@ -18,11 +18,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Whisper API operations
   whisper: {
+    // Cloud service
     setApiKey: (apiKey) => ipcRenderer.invoke('whisper-set-api-key', apiKey),
     validateApiKey: (apiKey) => ipcRenderer.invoke('whisper-validate-api-key', apiKey),
     transcribeAudio: (audioPath, options) => ipcRenderer.invoke('whisper-transcribe-audio', audioPath, options),
     testConnection: () => ipcRenderer.invoke('whisper-test-connection'),
-    checkApiKeyStatus: () => ipcRenderer.invoke('whisper-check-api-key')
+    checkApiKeyStatus: () => ipcRenderer.invoke('whisper-check-api-key'),
+    
+    // Mode switching
+    getMode: () => ipcRenderer.invoke('whisper-get-mode'),
+    setMode: (mode) => ipcRenderer.invoke('whisper-set-mode', mode),
+    
+    // Local service
+    local: {
+      checkService: () => ipcRenderer.invoke('whisper-local-check-service'),
+      installDependencies: () => ipcRenderer.invoke('whisper-local-install-dependencies'),
+      getModels: () => ipcRenderer.invoke('whisper-local-get-models'),
+      changeModel: (modelName) => ipcRenderer.invoke('whisper-local-change-model', modelName),
+      testService: () => ipcRenderer.invoke('whisper-local-test-service')
+    }
   },
   
   // Generic invoke method for backward compatibility

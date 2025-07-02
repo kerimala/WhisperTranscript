@@ -6,10 +6,13 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const WhisperApiClient = require('./services/whisperApiClient');
+const WhisperLocalClient = require('./services/whisperLocalClient');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow;
 let whisperClient;
+let whisperLocalClient;
+let currentMode = 'cloud'; // 'cloud' or 'local'
 
 function createWindow() {
   // Create the browser window
@@ -28,6 +31,77 @@ function createWindow() {
     show: false, // Don't show until ready
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default'
   });
+
+// Mode switching handlers
+ipcMain.handle('whisper-get-mode', async () => {
+  return { mode: currentMode };
+});
+
+ipcMain.handle('whisper-set-mode', async (event, mode) => {
+  try {
+    if (mode !== 'cloud' && mode !== 'local') {
+      throw new Error('Invalid mode. Must be "cloud" or "local"');
+    }
+    
+    currentMode = mode;
+    console.log(`Switched to ${mode} mode`);
+    return { success: true, mode: currentMode };
+  } catch (error) {
+    console.error('Error setting mode:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Local service handlers
+ipcMain.handle('whisper-local-check-service', async () => {
+  try {
+    const isAvailable = await whisperLocalClient.isServiceAvailable();
+    return { available: isAvailable };
+  } catch (error) {
+    console.error('Error checking local service:', error);
+    return { available: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-install-dependencies', async () => {
+  try {
+    const result = await whisperLocalClient.installDependencies();
+    return result;
+  } catch (error) {
+    console.error('Error installing dependencies:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-get-models', async () => {
+  try {
+    const models = await whisperLocalClient.getAvailableModels();
+    return { success: true, models };
+  } catch (error) {
+    console.error('Error getting local models:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-change-model', async (event, modelName) => {
+  try {
+    const result = await whisperLocalClient.changeModel(modelName);
+    return result;
+  } catch (error) {
+    console.error('Error changing local model:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-test-service', async () => {
+  try {
+    const result = await whisperLocalClient.testService();
+    return result;
+  } catch (error) {
+    console.error('Error testing local service:', error);
+    return { success: false, error: error.message };
+  }
+});
 
   // Load the app
   const startUrl = isDev 
@@ -69,21 +143,26 @@ function createWindow() {
   });
 }
 
-// Initialize Whisper client with API key from environment
-function initializeWhisperClient() {
+// Initialize Whisper clients
+function initializeWhisperClients() {
+  // Initialize cloud client
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey) {
-    console.log('Initializing Whisper client with API key from environment');
+    console.log('Initializing Whisper cloud client with API key from environment');
     whisperClient = new WhisperApiClient(apiKey);
   } else {
     console.log('No API key found in environment variables');
   }
+  
+  // Initialize local client
+  console.log('Initializing Whisper local client');
+  whisperLocalClient = new WhisperLocalClient();
 }
 
 // App event handlers
 app.whenReady().then(() => {
   createWindow();
-  initializeWhisperClient();
+  initializeWhisperClients();
 
   app.on('activate', () => {
     // On macOS, re-create window when dock icon is clicked
@@ -206,8 +285,18 @@ ipcMain.handle('whisper-transcribe-audio', async (event, audioInput, options = {
   let tempFilePath = null;
   
   try {
-    if (!whisperClient) {
-      throw new Error('Whisper client not initialized. Please set your API key first.');
+    // Check which service to use based on current mode
+    let client;
+    if (currentMode === 'local') {
+      if (!whisperLocalClient) {
+        throw new Error('Local Whisper service not initialized.');
+      }
+      client = whisperLocalClient;
+    } else {
+      if (!whisperClient) {
+        throw new Error('Whisper client not initialized. Please set your API key first.');
+      }
+      client = whisperClient;
     }
     
     let audioFilePath;
@@ -238,14 +327,14 @@ ipcMain.handle('whisper-transcribe-audio', async (event, audioInput, options = {
       throw new Error('Invalid audio input. Expected file path or File object.');
     }
     
-    console.log('Starting transcription for:', audioFilePath);
+    console.log(`Starting ${currentMode} transcription for:`, audioFilePath);
     
     // Set up progress callback
     const onProgress = (progressData) => {
       mainWindow.webContents.send('transcription-progress', progressData);
     };
     
-    const result = await whisperClient.transcribeAudio(audioFilePath, {
+    const result = await client.transcribeAudio(audioFilePath, {
       ...options,
       onProgress
     });
