@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { ThemeProvider } from './contexts/ThemeContext';
+import './styles/theme.css';
 import './styles/App.css';
 import Header from './components/Header';
 import FileUpload from './components/FileUpload';
@@ -84,61 +86,63 @@ function App() {
   };
 
   return (
-    <div className="App">
-      <Header version={appVersion} />
-      
-      <main className="main-content">
-        <div className="upload-section">
-          <FileUpload 
-            onFileSelect={handleFileSelect}
-            selectedFile={selectedFile}
-            isTranscribing={isTranscribing}
-          />
-          
-          {selectedFile && (
-            <div className="action-buttons">
-              <button 
-                className="transcribe-btn"
-                onClick={handleTranscribe}
-                disabled={isTranscribing}
-              >
-                {isTranscribing ? 'Transcribing...' : 'Start Transcription'}
-              </button>
-              
-              {transcription && (
+    <ThemeProvider>
+      <div className="App">
+        <Header version={appVersion} />
+        
+        <main className="main-content">
+          <div className="upload-section card">
+            <FileUpload 
+              onFileSelect={handleFileSelect}
+              selectedFile={selectedFile}
+              isTranscribing={isTranscribing}
+            />
+            
+            {selectedFile && (
+              <div className="action-buttons">
                 <button 
-                  className="clear-btn"
-                  onClick={handleClearTranscription}
+                  className="transcribe-btn btn-primary focus-visible"
+                  onClick={handleTranscribe}
                   disabled={isTranscribing}
                 >
-                  Clear
+                  {isTranscribing ? 'Transcribing...' : 'Start Transcription'}
                 </button>
-              )}
+                
+                {transcription && (
+                  <button 
+                    className="clear-btn btn-secondary focus-visible"
+                    onClick={handleClearTranscription}
+                    disabled={isTranscribing}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="error-message fade-in">
+              <strong>Error:</strong> {error}
             </div>
           )}
-        </div>
 
-        {error && (
-          <div className="error-message">
-            <strong>Error:</strong> {error}
-          </div>
-        )}
+          {(transcription || isTranscribing) && (
+            <TranscriptionDisplay 
+              transcription={transcription}
+              isTranscribing={isTranscribing}
+              progress={transcriptionProgress}
+            />
+          )}
+        </main>
 
-        {(transcription || isTranscribing) && (
-          <TranscriptionDisplay 
-            transcription={transcription}
-            isTranscribing={isTranscribing}
-            progress={transcriptionProgress}
-          />
-        )}
-      </main>
-
-      <StatusBar 
-        selectedFile={selectedFile}
-        isTranscribing={isTranscribing}
-        progress={transcriptionProgress}
-      />
-    </div>
+        <StatusBar 
+          selectedFile={selectedFile}
+          isTranscribing={isTranscribing}
+          progress={transcriptionProgress}
+        />
+      </div>
+    </ThemeProvider>
   );
 }
 

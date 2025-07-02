@@ -2,11 +2,11 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 24px;
-  background: #f8f9fa;
-  border-top: 1px solid #e9ecef;
-  font-size: 12px;
-  color: #6c757d;
+  padding: var(--spacing-sm) var(--spacing-xl);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
   min-height: 40px;
   flex-shrink: 0;
 }
@@ -14,7 +14,7 @@
 .status-section {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 
 .status-indicator {
@@ -30,7 +30,7 @@
 }
 
 .status-spinner svg {
-  color: #667eea;
+  color: var(--color-primary);
 }
 
 @keyframes spin {
@@ -39,20 +39,20 @@
 }
 
 .status-text {
-  font-weight: 500;
-  color: #495057;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
 }
 
 .info-section {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   font-size: 11px;
-  color: #868e96;
+  color: var(--color-text-muted);
 }
 
 .file-size {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .separator {
@@ -60,46 +60,46 @@
 }
 
 .platform {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .dev-mode {
-  background: #ffc107;
-  color: #212529;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 600;
+  background: var(--color-warning);
+  color: var(--color-warning-text);
+  padding: 2px var(--spacing-xs);
+  border-radius: var(--radius-xs);
+  font-weight: var(--font-weight-semibold);
   font-size: 10px;
   letter-spacing: 0.5px;
 }
 
 /* Status indicator colors */
 .status-indicator svg {
-  color: #6c757d;
+  color: var(--color-text-muted);
 }
 
 /* Ready state */
 .status-bar:has(.status-text:contains("Ready")) .status-indicator svg {
-  color: #6c757d;
+  color: var(--color-text-muted);
 }
 
 /* File loaded state */
 .status-bar:has(.status-text:contains("File loaded")) .status-indicator svg {
-  color: #28a745;
+  color: var(--color-success);
 }
 
 /* Transcribing state */
 .status-bar:has(.status-text:contains("Transcribing")) .status-indicator svg {
-  color: #667eea;
+  color: var(--color-primary);
 }
 
 /* Responsive design */
 @media (max-width: 768px) {
   .status-bar {
-    padding: 8px 20px;
+    padding: var(--spacing-sm) var(--spacing-lg);
     flex-direction: column;
     align-items: flex-start;
-    gap: 4px;
+    gap: var(--spacing-xs);
     min-height: auto;
   }
   
@@ -115,7 +115,7 @@
 
 @media (max-width: 480px) {
   .status-bar {
-    padding: 6px 16px;
+    padding: var(--spacing-xs) var(--spacing-lg);
   }
   
   .status-text {
@@ -127,38 +127,18 @@
   }
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .status-bar {
-    background: #1a202c;
-    border-color: #4a5568;
-    color: #a0aec0;
-  }
-  
-  .status-text {
-    color: #e2e8f0;
-  }
-  
-  .info-section {
-    color: #718096;
-  }
-  
-  .dev-mode {
-    background: #d69e2e;
-    color: #1a202c;
-  }
-}
+/* Dark mode is now handled by CSS variables */
 
 /* Smooth transitions */
 .status-bar,
 .status-text,
 .status-indicator {
-  transition: all 0.2s ease;
+  transition: all var(--transition-normal);
 }
 
 /* Animation for status changes */
 .status-text {
-  animation: fadeIn 0.3s ease;
+  animation: fadeIn var(--transition-slow) ease;
 }
 
 @keyframes fadeIn {
