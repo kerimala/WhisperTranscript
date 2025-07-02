@@ -97,15 +97,14 @@ class WhisperLocalClient extends EventEmitter {
         console.error(`[WhisperLocal] Service stderr: ${data.toString().trim()}`);
       });
 
-      // Wait a moment for the process to stabilize
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Verify the service is responsive via HTTP
-      const isReady = await this._testDaemonConnection();
+      // Wait for the service to become responsive
+      const isReady = await this._waitForServiceReady();
       if (!isReady) {
-        throw new Error('Service started but not responsive');
+        throw new Error('Service started but failed to become responsive');
       }
 
+      console.log('[WhisperLocal] Service started successfully');
+      this.isServiceReady = true;
       console.log('[WhisperLocal] Service started successfully');
       this.emit('serviceStarted');
       return true;
@@ -270,6 +269,26 @@ class WhisperLocalClient extends EventEmitter {
       console.error('[WhisperLocal] Health check error:', error.message);
       this.emit('healthCheckFailed', error);
     }
+  }
+
+  /**
+   * Test daemon connection via HTTP
+   * @private
+   */
+  /**
+   * Wait for the service to be ready by polling the health endpoint
+   * @private
+   */
+  async _waitForServiceReady(timeout = 30000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      const result = await this._testDaemonConnection();
+      if (result && result.success) {
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Poll every 2 seconds
+    }
+    return false;
   }
 
   /**

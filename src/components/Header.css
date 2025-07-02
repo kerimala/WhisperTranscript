@@ -6,6 +6,7 @@
   position: relative;
   overflow: visible;
   z-index: 100;
+  -webkit-app-region: drag; /* Make the header draggable */
 }
 
 .app-header::before {
@@ -71,7 +72,9 @@
 
 /* Settings and Theme toggle buttons */
 .settings-btn,
-.theme-toggle-btn {
+.theme-toggle-btn,
+.api-key-status { /* Add .api-key-status here */
+  -webkit-app-region: no-drag; /* Make buttons and interactive elements non-draggable */
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: var(--radius-md);
@@ -86,7 +89,8 @@
 }
 
 .settings-btn:hover,
-.theme-toggle-btn:hover {
+.theme-toggle-btn:hover,
+.api-key-status:hover { /* Add .api-key-status here */
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);

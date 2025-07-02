@@ -77,7 +77,7 @@ class WhisperLocalService:
             Dict containing transcription result
         """
         if not self.model:
-            if not self.load_model():
+            if not self.model and not self.load_model():
                 return {
                     "success": False,
                     "error": "Failed to load Whisper model"
@@ -345,7 +345,8 @@ class WhisperDaemon:
             # Pre-load the model
             logger.info("Pre-loading Whisper model...")
             if not self.whisper_service.load_model():
-                logger.error("Failed to pre-load model")
+                logger.error("Fatal: Failed to pre-load model. The service cannot start.")
+                # In a real-world scenario, you might want to exit or handle this more gracefully
                 return False
             
             # Create handler with service instance

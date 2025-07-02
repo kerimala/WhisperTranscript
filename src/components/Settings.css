@@ -39,8 +39,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1.5rem;
+  padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--color-border);
+  position: relative;
 }
 
 .settings-header h2 {
@@ -48,6 +49,7 @@
   color: var(--color-text-primary);
   font-size: 1.25rem;
   font-weight: 600;
+  padding-right: 1rem; /* Add padding to avoid overlap */
 }
 
 .close-btn {
@@ -55,20 +57,16 @@
   border: none;
   color: var(--color-text-secondary);
   cursor: pointer;
-  padding: 0.75rem;
+  padding: 0.5rem;
   border-radius: var(--radius-md);
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  z-index: 10;
+  z-index: 1050; /* Ensure it's on top */
   pointer-events: auto;
-  min-width: 44px;
-  min-height: 44px;
-  width: 44px;
-  height: 44px;
-  margin: -0.25rem;
+  width: 40px;
+  height: 40px;
 }
 
 .close-btn:hover {

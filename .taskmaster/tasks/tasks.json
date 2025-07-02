@@ -349,7 +349,7 @@
         "dependencies": [
           8
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
@@ -357,7 +357,7 @@
             "description": "Extract and implement the core window creation functionality including window initialization, configuration, and OS-level window instantiation. Handle window properties such as size, position, title, and initial state.",
             "dependencies": [],
             "details": "Create dedicated modules for window creation that handle OS-specific window APIs, window property configuration, and initial window setup. Include error handling for window creation failures and validation of window parameters.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": ""
           },
           {
@@ -434,7 +434,7 @@
     ],
     "metadata": {
       "created": "2025-07-02T00:25:27.046Z",
-      "updated": "2025-07-02T22:31:20.701Z",
+      "updated": "2025-07-02T22:31:45.597Z",
       "description": "Tasks for master context"
     }
   }

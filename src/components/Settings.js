@@ -18,10 +18,14 @@ const Settings = ({ isOpen, onClose }) => {
   const [hotkeyStatus, setHotkeyStatus] = useState('');
 
   useEffect(() => {
+    let statusInterval;
     if (isOpen) {
       checkCurrentApiKey();
       loadSettings();
       checkLocalServiceStatus();
+
+      // Poll for service status every 5 seconds
+      statusInterval = setInterval(checkLocalServiceStatus, 5000);
     }
 
     const handleKeyDown = (e) => {
@@ -53,6 +57,9 @@ const Settings = ({ isOpen, onClose }) => {
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      if (statusInterval) {
+        clearInterval(statusInterval);
+      }
     };
   }, [isOpen, isRecording]);
 
@@ -260,9 +267,9 @@ const Settings = ({ isOpen, onClose }) => {
   return (
     <div className="settings-overlay">
       <div className="settings-modal">
-        <div className="settings-header">
+        <div className="settings-header titlebar-drag">
           <h2>Settings</h2>
-          <button className="close-btn" onClick={onClose} type="button">
+          <button className="close-btn titlebar-no-drag" onClick={onClose} type="button">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" strokeWidth="2"/>
               <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" strokeWidth="2"/>
