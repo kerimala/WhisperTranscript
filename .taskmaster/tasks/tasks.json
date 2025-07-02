@@ -236,7 +236,7 @@
         "testStrategy": "Run the Python script independently and use a tool like cURL or Postman to send an audio file to the local endpoint. Verify that it returns a valid transcription JSON. Test starting/stopping the Python process from Electron.",
         "priority": "medium",
         "dependencies": [],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -255,7 +255,7 @@
               1
             ],
             "details": "Create Electron main process to manage Python subprocess, implement IPC communication channels, handle process startup/shutdown, error recovery, and cross-platform process management",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           }
         ]
@@ -434,7 +434,7 @@
     ],
     "metadata": {
       "created": "2025-07-02T00:25:27.046Z",
-      "updated": "2025-07-02T20:23:21.289Z",
+      "updated": "2025-07-02T20:37:21.981Z",
       "description": "Tasks for master context"
     }
   }

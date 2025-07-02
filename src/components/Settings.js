@@ -6,12 +6,56 @@ const Settings = ({ isOpen, onClose }) => {
   const [isValidating, setIsValidating] = useState(false);
   const [validationStatus, setValidationStatus] = useState(null);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [transcriptionMode, setTranscriptionMode] = useState('cloud');
+  const [localServiceStatus, setLocalServiceStatus] = useState('unknown');
+  const [availableModels, setAvailableModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState('base');
+  const [isCheckingLocalService, setIsCheckingLocalService] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       checkCurrentApiKey();
+      loadSettings();
+      checkLocalServiceStatus();
     }
   }, [isOpen]);
+
+  const loadSettings = async () => {
+    try {
+      // Load saved transcription mode
+      const savedMode = localStorage.getItem('transcriptionMode') || 'cloud';
+      setTranscriptionMode(savedMode);
+      
+      // Load saved model selection
+      const savedModel = localStorage.getItem('selectedModel') || 'base';
+      setSelectedModel(savedModel);
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  };
+
+  const checkLocalServiceStatus = async () => {
+    if (!window.electronAPI?.whisper?.local) return;
+    
+    setIsCheckingLocalService(true);
+    try {
+      const status = await window.electronAPI.whisper.local.getStatus();
+      setLocalServiceStatus(status.isRunning ? 'running' : 'stopped');
+      
+      if (status.isRunning) {
+        // Get available models if service is running
+        const models = await window.electronAPI.whisper.local.getAvailableModels();
+        if (models.success) {
+          setAvailableModels(models.models || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking local service status:', error);
+      setLocalServiceStatus('error');
+    } finally {
+      setIsCheckingLocalService(false);
+    }
+  };
 
   const checkCurrentApiKey = async () => {
     try {
@@ -67,6 +111,75 @@ const Settings = ({ isOpen, onClose }) => {
     }
   };
 
+  const handleModeChange = async (mode) => {
+    try {
+      setTranscriptionMode(mode);
+      localStorage.setItem('transcriptionMode', mode);
+      
+      // If switching to local mode, ensure service is available
+      if (mode === 'local') {
+        await checkLocalServiceStatus();
+      }
+    } catch (error) {
+      console.error('Error changing transcription mode:', error);
+    }
+  };
+
+  const handleStartLocalService = async () => {
+    if (!window.electronAPI?.whisper?.local) return;
+    
+    setIsCheckingLocalService(true);
+    try {
+      const result = await window.electronAPI.whisper.local.startService();
+      if (result.success) {
+        setLocalServiceStatus('running');
+        // Refresh available models
+        setTimeout(() => checkLocalServiceStatus(), 2000);
+      } else {
+        setLocalServiceStatus('error');
+      }
+    } catch (error) {
+      console.error('Error starting local service:', error);
+      setLocalServiceStatus('error');
+    } finally {
+      setIsCheckingLocalService(false);
+    }
+  };
+
+  const handleStopLocalService = async () => {
+    if (!window.electronAPI?.whisper?.local) return;
+    
+    setIsCheckingLocalService(true);
+    try {
+      const result = await window.electronAPI.whisper.local.stopService();
+      if (result.success) {
+        setLocalServiceStatus('stopped');
+        setAvailableModels([]);
+      }
+    } catch (error) {
+      console.error('Error stopping local service:', error);
+    } finally {
+      setIsCheckingLocalService(false);
+    }
+  };
+
+  const handleModelChange = async (model) => {
+    try {
+      setSelectedModel(model);
+      localStorage.setItem('selectedModel', model);
+      
+      // If local service is running, change the model
+      if (localServiceStatus === 'running' && window.electronAPI?.whisper?.local) {
+        const result = await window.electronAPI.whisper.local.changeModel(model);
+        if (!result.success) {
+          console.error('Failed to change model:', result.error);
+        }
+      }
+    } catch (error) {
+      console.error('Error changing model:', error);
+    }
+  };
+
   const getStatusMessage = () => {
     switch (validationStatus) {
       case 'valid':
@@ -101,7 +214,125 @@ const Settings = ({ isOpen, onClose }) => {
 
         <div className="settings-content">
           <div className="setting-section">
-            <h3>OpenAI API Configuration</h3>
+            <h3>Transcription Mode</h3>
+            <p className="setting-description">
+              Choose between cloud-based transcription using OpenAI's API or local transcription using your own hardware.
+            </p>
+            
+            <div className="mode-selector">
+              <div className="mode-options">
+                <label className={`mode-option ${transcriptionMode === 'cloud' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="transcriptionMode"
+                    value="cloud"
+                    checked={transcriptionMode === 'cloud'}
+                    onChange={(e) => handleModeChange(e.target.value)}
+                  />
+                  <div className="mode-content">
+                    <div className="mode-icon">☁️</div>
+                    <div className="mode-info">
+                      <div className="mode-title">Cloud</div>
+                      <div className="mode-desc">Fast, accurate transcription via OpenAI API</div>
+                    </div>
+                  </div>
+                </label>
+                
+                <label className={`mode-option ${transcriptionMode === 'local' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="transcriptionMode"
+                    value="local"
+                    checked={transcriptionMode === 'local'}
+                    onChange={(e) => handleModeChange(e.target.value)}
+                  />
+                  <div className="mode-content">
+                    <div className="mode-icon">🖥️</div>
+                    <div className="mode-info">
+                      <div className="mode-title">Local</div>
+                      <div className="mode-desc">Private transcription on your device</div>
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {transcriptionMode === 'local' && (
+            <div className="setting-section">
+              <h3>Local Service Management</h3>
+              <p className="setting-description">
+                Manage the local Whisper transcription service running on your device.
+              </p>
+              
+              <div className="service-status">
+                <div className="status-info">
+                  <span className="status-label">Service Status:</span>
+                  <span className={`status-badge ${localServiceStatus}`}>
+                    {localServiceStatus === 'running' && '🟢 Running'}
+                    {localServiceStatus === 'stopped' && '🔴 Stopped'}
+                    {localServiceStatus === 'error' && '⚠️ Error'}
+                    {localServiceStatus === 'unknown' && '❓ Unknown'}
+                  </span>
+                </div>
+                
+                <div className="service-actions">
+                  {localServiceStatus === 'stopped' && (
+                    <button
+                      className="btn-primary"
+                      onClick={handleStartLocalService}
+                      disabled={isCheckingLocalService}
+                    >
+                      {isCheckingLocalService ? 'Starting...' : 'Start Service'}
+                    </button>
+                  )}
+                  
+                  {localServiceStatus === 'running' && (
+                    <button
+                      className="btn-secondary"
+                      onClick={handleStopLocalService}
+                      disabled={isCheckingLocalService}
+                    >
+                      {isCheckingLocalService ? 'Stopping...' : 'Stop Service'}
+                    </button>
+                  )}
+                  
+                  <button
+                    className="btn-secondary"
+                    onClick={checkLocalServiceStatus}
+                    disabled={isCheckingLocalService}
+                  >
+                    {isCheckingLocalService ? 'Checking...' : 'Refresh Status'}
+                  </button>
+                </div>
+              </div>
+              
+              {localServiceStatus === 'running' && availableModels.length > 0 && (
+                <div className="model-selection">
+                  <h4>Model Selection</h4>
+                  <p className="setting-description">
+                    Choose the Whisper model to use for transcription. Larger models are more accurate but slower.
+                  </p>
+                  
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                    className="model-select"
+                  >
+                    {availableModels.map(model => (
+                      <option key={model} value={model}>
+                        {model} {model === 'tiny' ? '(Fastest)' : model === 'base' ? '(Balanced)' : model === 'large' ? '(Most Accurate)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {transcriptionMode === 'cloud' && (
+            <div className="setting-section">
+              <h3>OpenAI API Configuration</h3>
             <p className="setting-description">
               Enter your OpenAI API key to enable transcription. You can get your API key from the{' '}
               <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
@@ -165,7 +396,8 @@ const Settings = ({ isOpen, onClose }) => {
                 {statusMessage.text}
               </div>
             )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
