@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showMessageBox: (options) => ipcRenderer.invoke('show-message-box', options),
   showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
   showSaveDialog: (options) => ipcRenderer.invoke('show-save-dialog', options),
+  showAudioFileDialog: () => ipcRenderer.invoke('show-audio-file-dialog'),
   
   // File system operations (we'll add these as needed)
   // readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),

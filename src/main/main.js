@@ -104,6 +104,25 @@ ipcMain.handle('show-open-dialog', async (event, options) => {
   return result;
 });
 
+// Audio file dialog handler
+ipcMain.handle('show-audio-file-dialog', async (event) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Audio File',
+    filters: [
+      {
+        name: 'Audio Files',
+        extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'wma', 'webm']
+      },
+      {
+        name: 'All Files',
+        extensions: ['*']
+      }
+    ],
+    properties: ['openFile']
+  });
+  return result;
+});
+
 ipcMain.handle('show-save-dialog', async (event, options) => {
   const result = await dialog.showSaveDialog(mainWindow, options);
   return result;

@@ -51,8 +51,10 @@ function App() {
 
   const handleFileSelect = (file) => {
     setSelectedFile(file);
-    setTranscription('');
-    setError(null);
+    if (file) {
+      setTranscription('');
+      setError(null);
+    }
   };
 
   const handleTranscribe = async () => {
