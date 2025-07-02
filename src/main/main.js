@@ -182,10 +182,7 @@ ipcMain.handle('whisper-local-get-status', async () => {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     
-    // Open DevTools in development
-    if (isDev) {
-      mainWindow.webContents.openDevTools();
-    }
+
   });
 
   // Handle window closed
