@@ -62,7 +62,14 @@ jest.mock('url', () => ({
 describe('Electron Main Process Configuration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.resetModules();
+    // Re-setup mock implementations after clearing
+    mockApp.whenReady.mockImplementation(() => Promise.resolve());
+    mockApp.getVersion.mockImplementation(() => '1.0.0');
+    mockApp.requestSingleInstanceLock.mockImplementation(() => true);
+    
+    // Re-setup BrowserWindow mock
+    const { BrowserWindow } = require('electron');
+    BrowserWindow.mockImplementation(() => mockBrowserWindow);
   });
 
   describe('Electron module mocking', () => {
