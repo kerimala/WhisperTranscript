@@ -681,3 +681,71 @@ if (!gotTheLock) {
     }
   });
 }
+
+// Graceful shutdown handlers
+const gracefulShutdown = async () => {
+  console.log('Initiating graceful shutdown...');
+  
+  try {
+    // Stop service registry health monitoring
+    if (serviceRegistry) {
+      serviceRegistry.stopHealthMonitoring();
+    }
+    
+    // Shutdown local whisper client
+    if (whisperLocalClient) {
+      await whisperLocalClient.shutdown();
+    }
+    
+    // Cancel any ongoing model downloads
+    if (modelManager) {
+      await modelManager.cancelAllDownloads();
+    }
+    
+    console.log('Graceful shutdown completed');
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error);
+  }
+};
+
+// Handle app shutdown events
+app.on('before-quit', async (event) => {
+  console.log('App before-quit event triggered');
+  event.preventDefault();
+  
+  await gracefulShutdown();
+  app.exit(0);
+});
+
+app.on('will-quit', async (event) => {
+  console.log('App will-quit event triggered');
+  event.preventDefault();
+  
+  await gracefulShutdown();
+  app.exit(0);
+});
+
+// Handle process signals for graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT (Ctrl+C), shutting down gracefully...');
+  await gracefulShutdown();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, shutting down gracefully...');
+  await gracefulShutdown();
+  process.exit(0);
+});
+
+process.on('uncaughtException', async (error) => {
+  console.error('Uncaught exception:', error);
+  await gracefulShutdown();
+  process.exit(1);
+});
+
+process.on('unhandledRejection', async (reason, promise) => {
+  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+  await gracefulShutdown();
+  process.exit(1);
+});

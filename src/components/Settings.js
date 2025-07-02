@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './Settings.css';
 import ModelDownloadManager from './ModelDownloadManager';
-import ServiceStatusIndicator from './ServiceStatusIndicator';
 
 const Settings = ({ isOpen, onClose }) => {
   const [apiKey, setApiKey] = useState('');
@@ -207,7 +206,7 @@ const Settings = ({ isOpen, onClose }) => {
       <div className="settings-modal">
         <div className="settings-header">
           <h2>Settings</h2>
-          <button className="close-btn" onClick={onClose}>
+          <button className="close-btn" onClick={onClose} type="button">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" strokeWidth="2"/>
               <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" strokeWidth="2"/>
@@ -217,17 +216,6 @@ const Settings = ({ isOpen, onClose }) => {
 
         <div className="settings-content">
           <h2>Settings</h2>
-          
-          {/* Service Status Indicator */}
-          <ServiceStatusIndicator 
-            onServiceSwitch={(serviceName, result) => {
-              console.log(`Service switched to ${serviceName}:`, result);
-              // Refresh local service status if switched to local
-              if (serviceName === 'local') {
-                checkLocalServiceStatus();
-              }
-            }}
-          />
           
           <div className="setting-section">
             <h3>Transcription Mode</h3>

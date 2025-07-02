@@ -55,12 +55,20 @@
   border: none;
   color: var(--color-text-secondary);
   cursor: pointer;
-  padding: 0.5rem;
+  padding: 0.75rem;
   border-radius: var(--radius-md);
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+  margin: -0.25rem;
 }
 
 .close-btn:hover {

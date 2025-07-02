@@ -18,6 +18,8 @@ A desktop application for audio transcription using OpenAI Whisper, built with E
 
 - Node.js (v16 or higher)
 - npm or yarn
+- Python 3.7+ (for local Whisper transcription)
+- pip3 (Python package manager)
 
 ### Installation
 
@@ -27,12 +29,19 @@ git clone <repository-url>
 cd WhisperTranscript
 ```
 
-2. Install dependencies:
+2. Install Node.js dependencies:
 ```bash
 npm install
 ```
 
-3. Start the development server:
+3. Install Python dependencies for local Whisper transcription:
+```bash
+pip3 install -r requirements.txt
+```
+
+**Note**: The application also includes an automatic dependency installer that will prompt you to install Python dependencies if they're missing.
+
+4. Start the development server:
 ```bash
 npm run dev
 ```

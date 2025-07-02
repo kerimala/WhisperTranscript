@@ -15,20 +15,20 @@ class ModelManager extends EventEmitter {
     // Model storage directory
     this.modelsDir = path.join(app.getPath('userData'), 'whisper-models');
     
-    // Available Whisper models with their metadata
+    // Available Whisper models with their metadata (Official OpenAI URLs)
     this.availableModels = {
       'tiny': {
         name: 'tiny',
         size: '39 MB',
         sizeBytes: 39000000,
         description: 'Fastest, least accurate',
-        url: 'https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f83b26e78e39ff953a90edea54b226a982bf86c7c/tiny.pt',
-        checksum: '65147644a518d12f04e32d6f83b26e78e39ff953a90edea54b226a982bf86c7c'
+        url: 'https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt',
+        checksum: '65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9'
       },
       'base': {
         name: 'base',
-        size: '142 MB',
-        sizeBytes: 142000000,
+        size: '74 MB',
+        sizeBytes: 74000000,
         description: 'Good balance of speed and accuracy',
         url: 'https://openaipublic.azureedge.net/main/whisper/models/ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e/base.pt',
         checksum: 'ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e'
@@ -54,8 +54,8 @@ class ModelManager extends EventEmitter {
         size: '1550 MB',
         sizeBytes: 1550000000,
         description: 'Best accuracy, slowest',
-        url: 'https://openaipublic.azureedge.net/main/whisper/models/e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a/large-v3.pt',
-        checksum: 'e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a'
+        url: 'https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt',
+        checksum: 'e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb'
       }
     };
     
@@ -175,14 +175,22 @@ class ModelManager extends EventEmitter {
       if (result.success) {
         // Verify the downloaded file
         console.log(`[ModelManager] Verifying ${modelName} model integrity`);
-        const isValid = await this.verifyModelIntegrity(modelName, tempPath);
+        const isValid = await this._verifyModelIntegrityInternal(modelName, tempPath);
         
         if (isValid) {
           // Move temp file to final location
-          fs.renameSync(tempPath, modelPath);
-          
-          console.log(`[ModelManager] Successfully downloaded and verified ${modelName} model`);
-          this.emit('downloadCompleted', { modelName, path: modelPath });
+        fs.renameSync(tempPath, modelPath);
+        
+        // Emit final progress update at 100%
+        const finalDownloadState = this.activeDownloads.get(modelName);
+        if (finalDownloadState) {
+          finalDownloadState.progress = 100;
+          finalDownloadState.downloadedBytes = finalDownloadState.totalBytes;
+          this.emit('downloadProgress', { ...finalDownloadState });
+        }
+        
+        console.log(`[ModelManager] Successfully downloaded and verified ${modelName} model`);
+        this.emit('downloadCompleted', { modelName, path: modelPath });
           
           return {
             success: true,
@@ -295,12 +303,43 @@ class ModelManager extends EventEmitter {
   }
 
   /**
-   * Verify model file integrity using checksum
+   * Verify model file integrity using checksum (public method)
+   * @param {string} modelName - Name of the model
+   * @returns {Promise<Object>} Verification result
+   */
+  async verifyModelIntegrity(modelName) {
+    try {
+      if (!this.availableModels[modelName]) {
+        return {
+          success: false,
+          error: `Unknown model: ${modelName}`
+        };
+      }
+      
+      const modelPath = path.join(this.modelsDir, `${modelName}.pt`);
+      const isValid = await this._verifyModelIntegrityInternal(modelName, modelPath);
+      
+      return {
+        success: true,
+        isValid,
+        message: isValid ? 'Model integrity verified successfully' : 'Model integrity check failed'
+      };
+    } catch (error) {
+      console.error(`[ModelManager] Error verifying ${modelName}:`, error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Internal method to verify model file integrity using checksum
    * @param {string} modelName - Name of the model
    * @param {string} filePath - Path to the model file
    * @returns {Promise<boolean>} True if valid
    */
-  async verifyModelIntegrity(modelName, filePath) {
+  async _verifyModelIntegrityInternal(modelName, filePath) {
     try {
       if (!fs.existsSync(filePath)) {
         return false;
@@ -416,6 +455,40 @@ class ModelManager extends EventEmitter {
   }
 
   /**
+   * Cancel all active downloads
+   * @returns {Promise<Object>} Cancellation result
+   */
+  async cancelAllDownloads() {
+    const activeDownloadNames = Array.from(this.activeDownloads.keys());
+    
+    if (activeDownloadNames.length === 0) {
+      return {
+        success: true,
+        message: 'No active downloads to cancel'
+      };
+    }
+    
+    console.log(`[ModelManager] Cancelling ${activeDownloadNames.length} active downloads`);
+    
+    const results = [];
+    for (const modelName of activeDownloadNames) {
+      const result = this.cancelDownload(modelName);
+      results.push({ modelName, ...result });
+    }
+    
+    // Clear the download queue as well
+    this.downloadQueue = [];
+    
+    const successCount = results.filter(r => r.success).length;
+    
+    return {
+      success: true,
+      message: `Cancelled ${successCount} downloads`,
+      results
+    };
+  }
+
+  /**
    * Get download progress for all active downloads
    * @returns {Object} Download progress information
    */
@@ -431,6 +504,44 @@ class ModelManager extends EventEmitter {
       activeDownloads: progress,
       queueLength: this.downloadQueue.length
     };
+  }
+
+  /**
+   * Get list of downloaded models with their information
+   * @returns {Object} Downloaded models information
+   */
+  getDownloadedModels() {
+    try {
+      const downloadedModels = [];
+      
+      for (const [modelName, modelInfo] of Object.entries(this.availableModels)) {
+        const modelPath = path.join(this.modelsDir, `${modelName}.pt`);
+        if (fs.existsSync(modelPath)) {
+          const stats = fs.statSync(modelPath);
+          downloadedModels.push({
+            name: modelName,
+            ...modelInfo,
+            actualSize: stats.size,
+            path: modelPath,
+            modified: stats.mtime,
+            isDownloaded: true
+          });
+        }
+      }
+      
+      return {
+        success: true,
+        models: downloadedModels,
+        modelsDirectory: this.modelsDir
+      };
+      
+    } catch (error) {
+      console.error('[ModelManager] Error getting downloaded models:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
 
   /**

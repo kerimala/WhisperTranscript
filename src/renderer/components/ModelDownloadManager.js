@@ -153,7 +153,7 @@ const ModelDownloadManager = ({ isVisible, onClose }) => {
       setError(null);
       const result = await window.electronAPI.whisper.models.verifyIntegrity(modelName);
       if (result.success) {
-        if (result.valid) {
+        if (result.isValid) {
           alert(`Model ${modelName} integrity verified successfully.`);
         } else {
           alert(`Model ${modelName} integrity check failed. Consider re-downloading.`);
@@ -249,7 +249,7 @@ const ModelDownloadManager = ({ isVisible, onClose }) => {
                       <div className="model-info">
                         <div className="model-name">{model.name}</div>
                         <div className="model-details">
-                          <span className="model-size">Size: {formatFileSize(model.size)}</span>
+                          <span className="model-size">Size: {model.size || formatFileSize(model.sizeBytes)}</span>
                           <span className="model-description">{model.description}</span>
                         </div>
                       </div>
@@ -303,11 +303,11 @@ const ModelDownloadManager = ({ isVisible, onClose }) => {
                   <div className="model-info">
                     <div className="model-name">{model.name}</div>
                     <div className="model-details">
-                      <span className="model-size">Size: {formatFileSize(model.size)}</span>
+                      <span className="model-size">Size: {formatFileSize(model.actualSize || model.sizeBytes)}</span>
                       <span className="model-path">Path: {model.path}</span>
-                      {model.downloadDate && (
+                      {model.modified && (
                         <span className="download-date">
-                          Downloaded: {new Date(model.downloadDate).toLocaleDateString()}
+                          Downloaded: {new Date(model.modified).toLocaleDateString()}
                         </span>
                       )}
                     </div>
