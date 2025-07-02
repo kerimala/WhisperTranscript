@@ -64,6 +64,8 @@ const ServiceStatusIndicator = ({ onServiceSwitch }) => {
   const getHealthStatusIcon = (serviceName) => {
     const health = serviceStatus.healthStatus[serviceName];
     if (!health) return '❓';
+
+    if (health.isStarting) return '⏳';
     
     switch (health.status) {
       case 'healthy': return '✅';
@@ -76,6 +78,8 @@ const ServiceStatusIndicator = ({ onServiceSwitch }) => {
   const getHealthStatusText = (serviceName) => {
     const health = serviceStatus.healthStatus[serviceName];
     if (!health) return 'Unknown';
+
+    if (health.isStarting) return 'Starting';
     
     return health.status.charAt(0).toUpperCase() + health.status.slice(1);
   };

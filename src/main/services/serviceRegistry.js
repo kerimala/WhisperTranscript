@@ -211,44 +211,28 @@ class ServiceRegistry extends EventEmitter {
    */
   async checkServiceHealth(serviceName) {
     const service = this.services.get(serviceName);
-    if (!service) {
-      return false;
+    if (!service || !service.config.healthCheck) {
+      return true; // No health check needed
+    }
+
+    // If the service is starting, wait for it to be ready
+    if (service.instance.isStarting) {
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait and re-check
+      return this.checkServiceHealth(serviceName);
     }
     
     try {
-      let isHealthy = false;
-      
-      // Use service-specific health check if available
-      if (service.instance.isHealthy) {
-        isHealthy = await service.instance.isHealthy();
-      } else if (service.instance.testConnection) {
-        isHealthy = await service.instance.testConnection();
-      } else if (service.instance.isAvailable) {
-        isHealthy = await service.instance.isAvailable();
-      } else {
-        // Default health check - assume healthy if instance exists
-        isHealthy = true;
-      }
-      
+      const isHealthy = await service.instance.isHealthy();
       service.isHealthy = isHealthy;
       service.lastHealthCheck = new Date().toISOString();
       
-      const state = this.serviceStates.get(serviceName);
-      if (isHealthy) {
-        state.status = 'healthy';
-        state.lastSuccess = new Date().toISOString();
-        state.lastError = null;
-      } else {
-        state.status = 'unhealthy';
-        state.lastError = 'Health check failed';
-      }
-      
-      this.emit('healthCheck', {
-        service: serviceName,
-        isHealthy,
-        timestamp: service.lastHealthCheck
+      this.serviceStates.set(serviceName, {
+        status: isHealthy ? 'healthy' : 'unhealthy',
+        lastError: isHealthy ? null : 'Health check failed',
+        lastSuccess: isHealthy ? new Date().toISOString() : this.serviceStates.get(serviceName).lastSuccess
       });
       
+      this.emit('healthCheckResult', { name: serviceName, isHealthy });
       return isHealthy;
       
     } catch (error) {

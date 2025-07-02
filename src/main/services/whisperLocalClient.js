@@ -21,6 +21,7 @@ class WhisperLocalClient extends EventEmitter {
     
     // Process management
     this.serviceProcess = null;
+    this.isStarting = false;
     this.isServiceRunning = false;
     this.healthCheckInterval = null;
     this.healthCheckIntervalMs = 30000; // 30 seconds
@@ -62,10 +63,12 @@ class WhisperLocalClient extends EventEmitter {
    * @returns {Promise<boolean>} True if started successfully
    */
   async startService() {
-    if (this.isServiceRunning) {
-      console.log('[WhisperLocal] Service already running');
+    if (this.isServiceRunning || this.isStarting) {
+      console.log('[WhisperLocal] Service is already running or starting');
       return true;
     }
+
+    this.isStarting = true;
 
     try {
       console.log('[WhisperLocal] Starting Python service...');
@@ -82,7 +85,6 @@ class WhisperLocalClient extends EventEmitter {
       });
 
       this.processStartTime = Date.now();
-      this.isServiceRunning = true;
       this.restartAttempts = 0;
 
       // Set up process event handlers
@@ -104,8 +106,8 @@ class WhisperLocalClient extends EventEmitter {
       }
 
       console.log('[WhisperLocal] Service started successfully');
+      this.isServiceRunning = true;
       this.isServiceReady = true;
-      console.log('[WhisperLocal] Service started successfully');
       this.emit('serviceStarted');
       return true;
       
@@ -114,6 +116,8 @@ class WhisperLocalClient extends EventEmitter {
       this.isServiceRunning = false;
       this.emit('serviceError', error);
       return false;
+    } finally {
+      this.isStarting = false;
     }
   }
 
@@ -251,7 +255,7 @@ class WhisperLocalClient extends EventEmitter {
    * @private
    */
   async performHealthCheck() {
-    if (!this.isServiceRunning) {
+    if (!this.isServiceRunning || this.isStarting) {
       return;
     }
 
@@ -394,6 +398,7 @@ class WhisperLocalClient extends EventEmitter {
    */
   getServiceStatus() {
     return {
+      isStarting: this.isStarting,
       isRunning: this.isServiceRunning,
       isReady: this.isServiceReady,
       processId: this.serviceProcess?.pid || null,
