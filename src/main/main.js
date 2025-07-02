@@ -6,10 +6,17 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const WhisperApiClient = require('./services/whisperApiClient');
+const WhisperLocalClient = require('./services/whisperLocalClient');
+const ModelManager = require('./services/modelManager');
+const ServiceRegistry = require('./services/serviceRegistry');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow;
 let whisperClient;
+let whisperLocalClient;
+let modelManager;
+let serviceRegistry;
+let currentMode = 'cloud'; // 'cloud' or 'local'
 
 function createWindow() {
   // Create the browser window
@@ -28,6 +35,130 @@ function createWindow() {
     show: false, // Don't show until ready
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default'
   });
+
+// IPC handlers for local Whisper service
+ipcMain.handle('whisper-get-mode', async () => {
+  return currentMode;
+});
+
+ipcMain.handle('whisper-set-mode', async (event, mode) => {
+  try {
+    if (mode === 'cloud' || mode === 'local') {
+      const previousMode = currentMode;
+      
+      // Use ServiceRegistry to switch services
+      const switchResult = await serviceRegistry.switchToService(mode, { 
+        preserveState: true,
+        timeout: 10000 
+      });
+      
+      if (switchResult.success) {
+        currentMode = mode;
+        console.log(`Transcription mode switched from ${previousMode} to: ${mode}`);
+        return { 
+          success: true, 
+          mode: currentMode,
+          previousMode,
+          serviceInfo: switchResult.serviceInfo
+        };
+      } else {
+        console.warn(`Failed to switch to ${mode} service:`, switchResult.error);
+        return { 
+          success: false, 
+          error: `Failed to switch to ${mode} service: ${switchResult.error}`,
+          fallbackUsed: switchResult.fallbackUsed
+        };
+      }
+    } else {
+      throw new Error('Invalid mode. Must be "cloud" or "local"');
+    }
+  } catch (error) {
+    console.error('Error setting transcription mode:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-check-service', async () => {
+  try {
+    const isAvailable = await whisperLocalClient.isAvailable();
+    return { success: true, available: isAvailable };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-install-dependencies', async () => {
+  try {
+    const result = await whisperLocalClient.installDependencies();
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-get-models', async () => {
+  try {
+    const result = await whisperLocalClient.getAvailableModels();
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-change-model', async (event, modelName) => {
+  try {
+    const result = await whisperLocalClient.changeModel(modelName);
+    return result;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-test-service', async () => {
+  try {
+    const result = await whisperLocalClient.testService();
+    return { success: true, ready: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Process management handlers
+ipcMain.handle('whisper-local-start-service', async () => {
+  try {
+    const result = await whisperLocalClient.startService();
+    return { success: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-stop-service', async () => {
+  try {
+    const result = await whisperLocalClient.stopService();
+    return { success: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-restart-service', async () => {
+  try {
+    const result = await whisperLocalClient.restartService();
+    return { success: result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-local-get-status', async () => {
+  try {
+    const status = whisperLocalClient.getServiceStatus();
+    return { success: true, status };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
 
   // Load the app
   const startUrl = isDev 
@@ -51,10 +182,7 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     
-    // Open DevTools in development
-    if (isDev) {
-      mainWindow.webContents.openDevTools();
-    }
+
   });
 
   // Handle window closed
@@ -69,21 +197,92 @@ function createWindow() {
   });
 }
 
-// Initialize Whisper client with API key from environment
-function initializeWhisperClient() {
+// Initialize Whisper clients
+function initializeWhisperClients() {
+  // Initialize service registry
+  console.log('Initializing Service Registry');
+  serviceRegistry = new ServiceRegistry();
+  
+  // Initialize cloud client
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey) {
-    console.log('Initializing Whisper client with API key from environment');
+    console.log('Initializing Whisper cloud client with API key from environment');
     whisperClient = new WhisperApiClient(apiKey);
   } else {
     console.log('No API key found in environment variables');
+    whisperClient = new WhisperApiClient();
   }
+  
+  // Initialize local client
+  console.log('Initializing Whisper local client');
+  whisperLocalClient = new WhisperLocalClient();
+  
+  // Register services with the registry
+  serviceRegistry.registerService('cloud', whisperClient, {
+    priority: 1,
+    healthCheck: true,
+    fallback: false
+  });
+  
+  serviceRegistry.registerService('local', whisperLocalClient, {
+    priority: 2,
+    healthCheck: true,
+    fallback: true
+  });
+  
+  // Set initial service based on currentMode
+  if (currentMode === 'local') {
+    serviceRegistry.switchToService('local', { force: true }).catch(error => {
+      console.warn('Failed to switch to local service, falling back to cloud:', error);
+      currentMode = 'cloud';
+      serviceRegistry.switchToService('cloud', { force: true });
+    });
+  } else {
+    serviceRegistry.switchToService('cloud', { force: true }).catch(error => {
+      console.warn('Failed to switch to cloud service:', error);
+    });
+  }
+  
+  // Set fallback service
+  serviceRegistry.setFallbackService('cloud');
+  
+  // Start health monitoring
+  serviceRegistry.startHealthMonitoring();
+  
+  // Initialize model manager
+  console.log('Initializing Model Manager');
+  modelManager = new ModelManager();
+  
+  // Set up model manager event listeners
+  modelManager.on('downloadStarted', (data) => {
+    mainWindow?.webContents.send('model-download-started', data);
+  });
+  
+  modelManager.on('downloadProgress', (data) => {
+    mainWindow?.webContents.send('model-download-progress', data);
+  });
+  
+  modelManager.on('downloadCompleted', (data) => {
+    mainWindow?.webContents.send('model-download-completed', data);
+  });
+  
+  modelManager.on('downloadError', (data) => {
+    mainWindow?.webContents.send('model-download-error', data);
+  });
+  
+  modelManager.on('downloadCancelled', (data) => {
+    mainWindow?.webContents.send('model-download-cancelled', data);
+  });
+  
+  modelManager.on('modelDeleted', (data) => {
+    mainWindow?.webContents.send('model-deleted', data);
+  });
 }
 
 // App event handlers
 app.whenReady().then(() => {
   createWindow();
-  initializeWhisperClient();
+  initializeWhisperClients();
 
   app.on('activate', () => {
     // On macOS, re-create window when dock icon is clicked
@@ -206,10 +405,6 @@ ipcMain.handle('whisper-transcribe-audio', async (event, audioInput, options = {
   let tempFilePath = null;
   
   try {
-    if (!whisperClient) {
-      throw new Error('Whisper client not initialized. Please set your API key first.');
-    }
-    
     let audioFilePath;
     
     // Check if audioInput is a serialized File object or a file path
@@ -238,22 +433,36 @@ ipcMain.handle('whisper-transcribe-audio', async (event, audioInput, options = {
       throw new Error('Invalid audio input. Expected file path or File object.');
     }
     
-    console.log('Starting transcription for:', audioFilePath);
+    console.log(`Starting transcription using ServiceRegistry for:`, audioFilePath);
     
     // Set up progress callback
     const onProgress = (progressData) => {
       mainWindow.webContents.send('transcription-progress', progressData);
     };
     
-    const result = await whisperClient.transcribeAudio(audioFilePath, {
+    // Use ServiceRegistry for transcription with automatic fallback
+    const transcriptionOptions = {
       ...options,
       onProgress
-    });
+    };
+    
+    const result = await serviceRegistry.executeWithFallback(
+      'transcribeAudio',
+      [audioFilePath, transcriptionOptions],
+      {
+        timeout: 300000, // 5 minutes timeout
+        retryAttempts: 1
+      }
+    );
     
     // Send completion event
-    mainWindow.webContents.send('transcription-complete', result);
+    mainWindow.webContents.send('transcription-complete', {
+      ...result.data,
+      serviceUsed: result.serviceUsed,
+      fallbackUsed: result.fallbackUsed
+    });
     
-    return { success: true, result };
+    return { success: true, result: result.data };
   } catch (error) {
     console.error('Transcription error:', error);
     
@@ -303,6 +512,154 @@ ipcMain.handle('whisper-test-connection', async (event) => {
   }
 });
 
+// Service Registry IPC handlers
+ipcMain.handle('service-get-status', async () => {
+  try {
+    return {
+      currentService: serviceRegistry.getCurrentService(),
+      availableServices: serviceRegistry.getAvailableServices(),
+      healthStatus: serviceRegistry.getHealthStatus(),
+      fallbackService: serviceRegistry.getFallbackService()
+    };
+  } catch (error) {
+    console.error('Error getting service status:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('service-switch', async (event, serviceName, options = {}) => {
+  try {
+    const result = await serviceRegistry.switchToService(serviceName, options);
+    if (result.success) {
+      currentMode = serviceName;
+    }
+    return result;
+  } catch (error) {
+    console.error('Error switching service:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('service-health-check', async (event, serviceName) => {
+  try {
+    return await serviceRegistry.checkServiceHealth(serviceName);
+  } catch (error) {
+    console.error('Error checking service health:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('service-get-config', async (event, serviceName) => {
+  try {
+    return serviceRegistry.getServiceConfig(serviceName);
+  } catch (error) {
+    console.error('Error getting service config:', error);
+    throw error;
+  }
+});
+
+// Model Management IPC handlers
+ipcMain.handle('model-get-available-models', async () => {
+  try {
+    if (!modelManager) {
+      throw new Error('Model manager not initialized');
+    }
+    return await modelManager.getAvailableModels();
+  } catch (error) {
+    console.error('Error getting available models:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('model-get-downloaded-models', async () => {
+  try {
+    if (!modelManager) {
+      throw new Error('Model manager not initialized');
+    }
+    return await modelManager.getDownloadedModels();
+  } catch (error) {
+    console.error('Error getting downloaded models:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('model-download', async (event, modelName) => {
+  try {
+    if (!modelManager) {
+      throw new Error('Model manager not initialized');
+    }
+    return await modelManager.downloadModel(modelName);
+  } catch (error) {
+    console.error('Error downloading model:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('model-cancel-download', async (event, modelName) => {
+  try {
+    if (!modelManager) {
+      throw new Error('Model manager not initialized');
+    }
+    return await modelManager.cancelDownload(modelName);
+  } catch (error) {
+    console.error('Error cancelling download:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('model-delete', async (event, modelName) => {
+  try {
+    if (!modelManager) {
+      throw new Error('Model manager not initialized');
+    }
+    return await modelManager.deleteModel(modelName);
+  } catch (error) {
+    console.error('Error deleting model:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('model-get-download-status', async (event, modelName) => {
+  try {
+    if (!modelManager) {
+      throw new Error('Model manager not initialized');
+    }
+    return await modelManager.getDownloadStatus(modelName);
+  } catch (error) {
+    console.error('Error getting download status:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('model-verify-integrity', async (event, modelName) => {
+  try {
+    console.log(`[IPC] Received model-verify-integrity request for: ${modelName}`);
+    if (!modelManager) {
+      throw new Error('Model manager not initialized');
+    }
+    const result = await modelManager.verifyModelIntegrity(modelName);
+    console.log(`[IPC] Verification result for ${modelName}:`, JSON.stringify(result, null, 2));
+    return result;
+  } catch (error) {
+    console.error('Error verifying model integrity:', error);
+    const errorResult = { success: false, error: error.message };
+    console.log(`[IPC] Error result for ${modelName}:`, JSON.stringify(errorResult, null, 2));
+    return errorResult;
+  }
+});
+
+ipcMain.handle('model-get-storage-info', async () => {
+  try {
+    if (!modelManager) {
+      throw new Error('Model manager not initialized');
+    }
+    return await modelManager.getStorageInfo();
+  } catch (error) {
+    console.error('Error getting storage info:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Handle app protocol for deep linking (optional)
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
@@ -326,3 +683,71 @@ if (!gotTheLock) {
     }
   });
 }
+
+// Graceful shutdown handlers
+const gracefulShutdown = async () => {
+  console.log('Initiating graceful shutdown...');
+  
+  try {
+    // Stop service registry health monitoring
+    if (serviceRegistry) {
+      serviceRegistry.stopHealthMonitoring();
+    }
+    
+    // Shutdown local whisper client
+    if (whisperLocalClient) {
+      await whisperLocalClient.shutdown();
+    }
+    
+    // Cancel any ongoing model downloads
+    if (modelManager) {
+      await modelManager.cancelAllDownloads();
+    }
+    
+    console.log('Graceful shutdown completed');
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error);
+  }
+};
+
+// Handle app shutdown events
+app.on('before-quit', async (event) => {
+  console.log('App before-quit event triggered');
+  event.preventDefault();
+  
+  await gracefulShutdown();
+  app.exit(0);
+});
+
+app.on('will-quit', async (event) => {
+  console.log('App will-quit event triggered');
+  event.preventDefault();
+  
+  await gracefulShutdown();
+  app.exit(0);
+});
+
+// Handle process signals for graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT (Ctrl+C), shutting down gracefully...');
+  await gracefulShutdown();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, shutting down gracefully...');
+  await gracefulShutdown();
+  process.exit(0);
+});
+
+process.on('uncaughtException', async (error) => {
+  console.error('Uncaught exception:', error);
+  await gracefulShutdown();
+  process.exit(1);
+});
+
+process.on('unhandledRejection', async (reason, promise) => {
+  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+  await gracefulShutdown();
+  process.exit(1);
+});

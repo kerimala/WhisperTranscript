@@ -1,0 +1,400 @@
+.model-download-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.model-download-modal {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 900px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.model-download-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.model-download-header h2 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.close-button:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.error-message {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 12px 16px;
+  margin: 16px 24px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.error-message button {
+  background: none;
+  border: none;
+  color: #dc2626;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0;
+  margin-left: 12px;
+}
+
+.storage-info {
+  padding: 16px 24px;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.storage-info h3 {
+  margin: 0 0 12px 0;
+  color: #374151;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.storage-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.storage-details span {
+  background: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+}
+
+.model-sections {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.available-models-section,
+.downloaded-models-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.available-models-section h3,
+.downloaded-models-section h3 {
+  margin: 0 0 16px 0;
+  color: #1f2937;
+  font-size: 1.2rem;
+  font-weight: 600;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.models-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.model-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  background: white;
+  transition: all 0.2s;
+}
+
+.model-item:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.model-item.downloaded {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.model-info {
+  margin-bottom: 12px;
+}
+
+.model-name {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+}
+
+.model-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.model-size {
+  font-weight: 500;
+  color: #374151;
+}
+
+.model-description {
+  font-style: italic;
+}
+
+.model-path {
+  font-family: monospace;
+  font-size: 0.8rem;
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.download-date {
+  color: #059669;
+  font-weight: 500;
+}
+
+.model-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.download-button,
+.cancel-button,
+.verify-button,
+.delete-button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.download-button {
+  background: #3b82f6;
+  color: white;
+}
+
+.download-button:hover {
+  background: #2563eb;
+}
+
+.cancel-button {
+  background: #ef4444;
+  color: white;
+  font-size: 0.8rem;
+  padding: 4px 8px;
+}
+
+.cancel-button:hover {
+  background: #dc2626;
+}
+
+.verify-button {
+  background: #10b981;
+  color: white;
+}
+
+.verify-button:hover {
+  background: #059669;
+}
+
+.delete-button {
+  background: #ef4444;
+  color: white;
+}
+
+.delete-button:hover {
+  background: #dc2626;
+}
+
+.downloaded-status {
+  display: flex;
+  align-items: center;
+}
+
+.downloaded-badge {
+  background: #10b981;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.download-progress {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.3s ease;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.progress-info span {
+  font-weight: 500;
+}
+
+.no-models {
+  text-align: center;
+  padding: 40px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.model-download-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.close-footer-button {
+  background: #6b7280;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.close-footer-button:hover {
+  background: #4b5563;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .model-download-modal {
+    width: 95%;
+    max-height: 90vh;
+  }
+  
+  .model-sections {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px;
+  }
+  
+  .model-download-header {
+    padding: 16px;
+  }
+  
+  .model-download-header h2 {
+    font-size: 1.3rem;
+  }
+  
+  .storage-details {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .model-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .download-progress {
+    margin-bottom: 8px;
+  }
+  
+  .progress-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .model-download-modal {
+    width: 98%;
+    margin: 1%;
+  }
+  
+  .model-item {
+    padding: 12px;
+  }
+  
+  .model-name {
+    font-size: 1rem;
+  }
+  
+  .model-details {
+    font-size: 0.8rem;
+  }
+}
