@@ -40,6 +40,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
       stopService: () => ipcRenderer.invoke('whisper-local-stop-service'),
       restartService: () => ipcRenderer.invoke('whisper-local-restart-service'),
       getStatus: () => ipcRenderer.invoke('whisper-local-get-status')
+    },
+    
+    // Service registry management
+    getServiceStatus: () => ipcRenderer.invoke('service-get-status'),
+    switchService: (serviceName, options) => ipcRenderer.invoke('service-switch', serviceName, options),
+    checkServiceHealth: (serviceName) => ipcRenderer.invoke('service-health-check', serviceName),
+    getServiceConfig: (serviceName) => ipcRenderer.invoke('service-get-config', serviceName),
+    
+    // Model management
+    models: {
+      getAvailable: () => ipcRenderer.invoke('model-get-available-models'),
+      getDownloaded: () => ipcRenderer.invoke('model-get-downloaded-models'),
+      download: (modelName) => ipcRenderer.invoke('model-download', modelName),
+      cancelDownload: (modelName) => ipcRenderer.invoke('model-cancel-download', modelName),
+      delete: (modelName) => ipcRenderer.invoke('model-delete', modelName),
+      getDownloadStatus: (modelName) => ipcRenderer.invoke('model-get-download-status', modelName),
+      verifyIntegrity: (modelName) => ipcRenderer.invoke('model-verify-integrity', modelName),
+      getStorageInfo: () => ipcRenderer.invoke('model-get-storage-info')
     }
   },
   
@@ -60,6 +78,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onTranscriptionError: (callback) => {
     ipcRenderer.on('transcription-error', callback);
     return () => ipcRenderer.removeListener('transcription-error', callback);
+  },
+  
+  // Model management event listeners
+  onModelDownloadStarted: (callback) => {
+    ipcRenderer.on('model-download-started', callback);
+    return () => ipcRenderer.removeListener('model-download-started', callback);
+  },
+  
+  onModelDownloadProgress: (callback) => {
+    ipcRenderer.on('model-download-progress', callback);
+    return () => ipcRenderer.removeListener('model-download-progress', callback);
+  },
+  
+  onModelDownloadCompleted: (callback) => {
+    ipcRenderer.on('model-download-completed', callback);
+    return () => ipcRenderer.removeListener('model-download-completed', callback);
+  },
+  
+  onModelDownloadError: (callback) => {
+    ipcRenderer.on('model-download-error', callback);
+    return () => ipcRenderer.removeListener('model-download-error', callback);
+  },
+  
+  onModelDownloadCancelled: (callback) => {
+    ipcRenderer.on('model-download-cancelled', callback);
+    return () => ipcRenderer.removeListener('model-download-cancelled', callback);
+  },
+  
+  onModelDeleted: (callback) => {
+    ipcRenderer.on('model-deleted', callback);
+    return () => ipcRenderer.removeListener('model-deleted', callback);
   }
 });
 

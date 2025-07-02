@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './Settings.css';
+import ModelDownloadManager from './ModelDownloadManager';
+import ServiceStatusIndicator from './ServiceStatusIndicator';
 
 const Settings = ({ isOpen, onClose }) => {
   const [apiKey, setApiKey] = useState('');
@@ -11,6 +13,7 @@ const Settings = ({ isOpen, onClose }) => {
   const [availableModels, setAvailableModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('base');
   const [isCheckingLocalService, setIsCheckingLocalService] = useState(false);
+  const [showModelManager, setShowModelManager] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -213,6 +216,19 @@ const Settings = ({ isOpen, onClose }) => {
         </div>
 
         <div className="settings-content">
+          <h2>Settings</h2>
+          
+          {/* Service Status Indicator */}
+          <ServiceStatusIndicator 
+            onServiceSwitch={(serviceName, result) => {
+              console.log(`Service switched to ${serviceName}:`, result);
+              // Refresh local service status if switched to local
+              if (serviceName === 'local') {
+                checkLocalServiceStatus();
+              }
+            }}
+          />
+          
           <div className="setting-section">
             <h3>Transcription Mode</h3>
             <p className="setting-description">
@@ -327,6 +343,20 @@ const Settings = ({ isOpen, onClose }) => {
                   </select>
                 </div>
               )}
+              
+              <div className="model-management">
+                <h4>Model Management</h4>
+                <p className="setting-description">
+                  Download, manage, and verify Whisper models for local transcription.
+                </p>
+                
+                <button
+                  className="btn-secondary"
+                  onClick={() => setShowModelManager(true)}
+                >
+                  Manage Models
+                </button>
+              </div>
             </div>
           )}
 
@@ -400,6 +430,13 @@ const Settings = ({ isOpen, onClose }) => {
           )}
         </div>
       </div>
+      
+      {showModelManager && (
+        <ModelDownloadManager
+          isOpen={showModelManager}
+          onClose={() => setShowModelManager(false)}
+        />
+      )}
     </div>
   );
 };
