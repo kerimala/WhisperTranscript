@@ -171,7 +171,7 @@ const ModelDownloadManager = ({ isOpen, onClose }) => {
     try {
       setError(null);
       const result = await window.electronAPI.whisper.models.verifyIntegrity(modelName);
-      if (result.success && result.valid) {
+      if (result.success && result.isValid) {
         alert(`${modelName} integrity check passed!`);
       } else {
         alert(`${modelName} integrity check failed: ${result.error || 'Unknown error'}`);
