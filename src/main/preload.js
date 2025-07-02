@@ -21,8 +21,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setApiKey: (apiKey) => ipcRenderer.invoke('whisper-set-api-key', apiKey),
     validateApiKey: (apiKey) => ipcRenderer.invoke('whisper-validate-api-key', apiKey),
     transcribeAudio: (audioPath, options) => ipcRenderer.invoke('whisper-transcribe-audio', audioPath, options),
-    testConnection: () => ipcRenderer.invoke('whisper-test-connection')
+    testConnection: () => ipcRenderer.invoke('whisper-test-connection'),
+    checkApiKeyStatus: () => ipcRenderer.invoke('whisper-check-api-key')
   },
+  
+  // Generic invoke method for backward compatibility
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   
   // Event listeners
   onTranscriptionProgress: (callback) => {

@@ -6,22 +6,69 @@ const Header = ({ version }) => {
   const { isDarkMode, toggleTheme } = useTheme();
   const [apiKeyStatus, setApiKeyStatus] = useState('checking');
   const [showApiKeyInfo, setShowApiKeyInfo] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   useEffect(() => {
     checkApiKeyStatus();
   }, []);
 
   const checkApiKeyStatus = async () => {
+    setIsTestingConnection(true);
+    setTestResult(null);
+    
     try {
-      const isValid = await window.electronAPI.whisper.testConnection();
-      setApiKeyStatus(isValid ? 'valid' : 'invalid');
+      // Check if we're in Electron environment
+      if (window.electronAPI && window.electronAPI.whisper) {
+        // First check if API key is already configured
+        const checkResult = await window.electronAPI.invoke('whisper-check-api-key');
+        
+        if (checkResult.configured) {
+          setApiKeyStatus(checkResult.valid ? 'valid' : 'invalid');
+          setTestResult({
+            success: checkResult.valid,
+            message: checkResult.valid ? 'Connection successful!' : (checkResult.error || 'Connection failed')
+          });
+        } else {
+          // No API key configured
+          setApiKeyStatus('invalid');
+          setTestResult({
+            success: false,
+            message: 'No API key configured. Please add your OpenAI API key to the .env file.'
+          });
+        }
+      } else {
+        // Browser environment - API key not accessible
+        setApiKeyStatus('browser-mode');
+        setTestResult({
+          success: false,
+          message: 'API key testing is only available in the Electron app'
+        });
+      }
     } catch (error) {
       console.error('Failed to check API key status:', error);
       setApiKeyStatus('invalid');
+      setTestResult({
+        success: false,
+        message: error.message || 'Connection test failed'
+      });
+    } finally {
+      setIsTestingConnection(false);
+      // Clear test result after 3 seconds
+      setTimeout(() => setTestResult(null), 3000);
     }
   };
 
   const getApiKeyStatusIcon = () => {
+    if (isTestingConnection) {
+      return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="spinning">
+          <circle cx="12" cy="12" r="10" fill="#6b7280" stroke="currentColor" strokeWidth="2"/>
+          <path d="M12 6v6l4 2" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      );
+    }
+    
     switch (apiKeyStatus) {
       case 'valid':
         return (
@@ -38,6 +85,13 @@ const Header = ({ version }) => {
             <path d="m9 9 6 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         );
+      case 'browser-mode':
+        return (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" fill="#f59e0b" stroke="currentColor" strokeWidth="2"/>
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        );
       default:
         return (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -49,11 +103,17 @@ const Header = ({ version }) => {
   };
 
   const getApiKeyStatusText = () => {
+    if (isTestingConnection) {
+      return 'Testing Connection...';
+    }
+    
     switch (apiKeyStatus) {
       case 'valid':
         return 'OpenAI API Connected';
       case 'invalid':
         return 'API Key Required';
+      case 'browser-mode':
+        return 'Browser Mode - Limited Features';
       default:
         return 'Checking API...';
     }
@@ -91,6 +151,8 @@ const Header = ({ version }) => {
                      <p>
                        {apiKeyStatus === 'valid' 
                          ? 'Your OpenAI API key is configured and working properly.' 
+                         : apiKeyStatus === 'browser-mode'
+                         ? 'You are running in browser mode. For full functionality including API key management, please use the Electron desktop app.'
                          : 'To use Whisper transcription, add your OpenAI API key to the .env file:'}
                      </p>
                      {apiKeyStatus === 'invalid' && (
@@ -104,15 +166,23 @@ const Header = ({ version }) => {
                          </p>
                        </>
                      )}
-                     <button 
-                       className="test-connection-btn"
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         checkApiKeyStatus();
-                       }}
-                     >
-                       Test Connection
-                     </button>
+                     {testResult && (
+                       <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
+                         {testResult.message}
+                       </div>
+                     )}
+                     {apiKeyStatus !== 'browser-mode' && (
+                       <button 
+                         className="test-connection-btn"
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           checkApiKeyStatus();
+                         }}
+                         disabled={isTestingConnection}
+                       >
+                         {isTestingConnection ? 'Testing...' : 'Test Connection'}
+                       </button>
+                     )}
                    </div>
                  </div>
                </>

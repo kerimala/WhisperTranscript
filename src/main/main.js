@@ -67,9 +67,21 @@ function createWindow() {
   });
 }
 
+// Initialize Whisper client with API key from environment
+function initializeWhisperClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (apiKey) {
+    console.log('Initializing Whisper client with API key from environment');
+    whisperClient = new WhisperApiClient(apiKey);
+  } else {
+    console.log('No API key found in environment variables');
+  }
+}
+
 // App event handlers
 app.whenReady().then(() => {
   createWindow();
+  initializeWhisperClient();
 
   app.on('activate', () => {
     // On macOS, re-create window when dock icon is clicked
@@ -171,6 +183,23 @@ ipcMain.handle('whisper-validate-api-key', async (event, apiKey) => {
   }
 });
 
+// Check if API key is already configured
+ipcMain.handle('whisper-check-api-key', async () => {
+  try {
+    if (!whisperClient) {
+      return { configured: false };
+    }
+    
+    const isValid = await whisperClient.testConnection();
+    return { configured: true, valid: isValid };
+  } catch (error) {
+    console.error('Error checking API key:', error);
+    return { configured: true, valid: false, error: error.message };
+  }
+});
+
+
+
 ipcMain.handle('whisper-transcribe-audio', async (event, audioFilePath, options = {}) => {
   try {
     if (!whisperClient) {
@@ -215,14 +244,18 @@ ipcMain.handle('whisper-transcribe-audio', async (event, audioFilePath, options 
 ipcMain.handle('whisper-test-connection', async (event) => {
   try {
     if (!whisperClient) {
-      return { success: false, error: 'No API key set' };
+      return { success: false, message: 'No API key set. Please configure your OpenAI API key first.' };
     }
     
     const isConnected = await whisperClient.testConnection();
-    return { success: true, connected: isConnected };
+    if (isConnected) {
+      return { success: true, message: 'Connection successful! API key is valid and working.' };
+    } else {
+      return { success: false, message: 'Connection failed. Please check your API key.' };
+    }
   } catch (error) {
     console.error('Connection test error:', error);
-    return { success: false, error: error.message };
+    return { success: false, message: `Connection failed: ${error.message}` };
   }
 });
 
