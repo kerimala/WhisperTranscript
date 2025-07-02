@@ -3,7 +3,11 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import FileUpload from '../FileUpload';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Clear any remaining DOM elements
+  document.body.innerHTML = '';
+});
 
 // Mock file for testing
 const createMockFile = (name, size, type) => {
@@ -105,17 +109,18 @@ describe('FileUpload Component', () => {
 
   describe('Drag and drop functionality', () => {
     it('handles drag over event', () => {
-      render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
       
       const dropZone = screen.getByText(/drop your audio file here/i).closest('.drop-zone');
       
       fireEvent.dragOver(dropZone);
       
       expect(dropZone).toHaveClass('drag-over');
+      unmount();
     });
 
     it('handles drag leave event', () => {
-      render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
       
       const dropZone = screen.getByText(/drop your audio file here/i).closest('.drop-zone');
       
@@ -124,10 +129,11 @@ describe('FileUpload Component', () => {
       
       fireEvent.dragLeave(dropZone);
       expect(dropZone).not.toHaveClass('drag-over');
+      unmount();
     });
 
     it('handles file drop', () => {
-      render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
       
       const dropZone = screen.getByText(/drop your audio file here/i).closest('.drop-zone');
       const file = createMockFile('dropped.mp3', 1024, 'audio/mpeg');
@@ -140,6 +146,7 @@ describe('FileUpload Component', () => {
       
       expect(mockOnFileSelect).toHaveBeenCalledWith(file);
       expect(dropZone).not.toHaveClass('drag-over');
+      unmount();
     });
   });
 
@@ -147,7 +154,7 @@ describe('FileUpload Component', () => {
     const selectedFile = createMockFile('selected.mp3', 2048576, 'audio/mpeg');
     
     it('displays file information when file is selected', () => {
-      render(
+      const { container, unmount } = render(
         <FileUpload 
           onFileSelect={mockOnFileSelect} 
           selectedFile={selectedFile}
@@ -155,28 +162,34 @@ describe('FileUpload Component', () => {
       );
       
       // Check if file name is displayed in h4 element
-      expect(screen.getByRole('heading', { level: 4, name: 'selected.mp3' })).toBeInTheDocument();
+      const fileNameElement = container.querySelector('.file-name');
+      expect(fileNameElement).toHaveTextContent('selected.mp3');
       // Check if file size is displayed (should be 1.95 MB for 2048576 bytes)
-      expect(screen.getByText('1.95 MB')).toBeInTheDocument();
+      const sizeElement = container.querySelector('.file-size');
+      expect(sizeElement).toHaveTextContent('1.95 MB');
       // Check if change file button is displayed
-      expect(screen.getByRole('button', { name: 'Change File' })).toBeInTheDocument();
+      const changeButton = container.querySelector('.change-file-btn');
+      expect(changeButton).toBeInTheDocument();
+      unmount();
     });
 
     it('displays file duration when available', () => {
       const fileWithDuration = { ...selectedFile, duration: 180 };
       
-      render(
+      const { container, unmount } = render(
         <FileUpload 
           onFileSelect={mockOnFileSelect} 
           selectedFile={fileWithDuration}
         />
       );
       
-      expect(screen.getByText('3:00')).toBeInTheDocument();
+      const durationElement = container.querySelector('.file-duration');
+      expect(durationElement).toHaveTextContent('3:00');
+      unmount();
     });
 
     it('hides change file button when transcribing', () => {
-      render(
+      const { unmount } = render(
         <FileUpload 
           onFileSelect={mockOnFileSelect} 
           selectedFile={selectedFile}
@@ -185,10 +198,11 @@ describe('FileUpload Component', () => {
       );
       
       expect(screen.queryByText('Change File')).not.toBeInTheDocument();
+      unmount();
     });
 
     it('disables file input when transcribing', () => {
-      render(
+      const { unmount } = render(
         <FileUpload 
           onFileSelect={mockOnFileSelect} 
           selectedFile={selectedFile}
@@ -198,29 +212,65 @@ describe('FileUpload Component', () => {
       
       const input = document.querySelector('input[type="file"]');
       expect(input).toBeDisabled();
+      unmount();
     });
   });
 
   describe('Utility functions', () => {
-    it('formats file sizes correctly', () => {
-      const testCases = [
-        { size: 0, expected: '0 Bytes' },
-        { size: 1024, expected: '1 KB' },
-        { size: 1048576, expected: '1 MB' },
-        { size: 1073741824, expected: '1 GB' }
-      ];
+    it('formats 0 Bytes correctly', () => {
+      const file = createMockFile('test.mp3', 0, 'audio/mpeg');
+      const { container, unmount } = render(
+        <FileUpload 
+          onFileSelect={mockOnFileSelect} 
+          selectedFile={file}
+        />
+      );
       
-      testCases.forEach(({ size, expected }) => {
-        const file = createMockFile('test.mp3', size, 'audio/mpeg');
-        render(
-          <FileUpload 
-            onFileSelect={mockOnFileSelect} 
-            selectedFile={file}
-          />
-        );
-        
-        expect(screen.getByText(expected)).toBeInTheDocument();
-      });
+      const sizeElement = container.querySelector('.file-size');
+      expect(sizeElement).toHaveTextContent('0 Bytes');
+      unmount();
+    });
+
+    it('formats KB correctly', () => {
+      const file = createMockFile('test.mp3', 1024, 'audio/mpeg');
+      const { container, unmount } = render(
+        <FileUpload 
+          onFileSelect={mockOnFileSelect} 
+          selectedFile={file}
+        />
+      );
+      
+      const sizeElement = container.querySelector('.file-size');
+      expect(sizeElement).toHaveTextContent('1 KB');
+      unmount();
+    });
+
+    it('formats MB correctly', () => {
+      const file = createMockFile('test.mp3', 1048576, 'audio/mpeg');
+      const { container, unmount } = render(
+        <FileUpload 
+          onFileSelect={mockOnFileSelect} 
+          selectedFile={file}
+        />
+      );
+      
+      const sizeElement = container.querySelector('.file-size');
+      expect(sizeElement).toHaveTextContent('1 MB');
+      unmount();
+    });
+
+    it('formats GB correctly', () => {
+      const file = createMockFile('test.mp3', 1073741824, 'audio/mpeg');
+      const { container, unmount } = render(
+        <FileUpload 
+          onFileSelect={mockOnFileSelect} 
+          selectedFile={file}
+        />
+      );
+      
+      const sizeElement = container.querySelector('.file-size');
+      expect(sizeElement).toHaveTextContent('1 GB');
+      unmount();
     });
 
     it('formats duration correctly', () => {
@@ -229,47 +279,151 @@ describe('FileUpload Component', () => {
         duration: 125 // 2:05
       };
       
-      render(
+      const { container, unmount } = render(
         <FileUpload 
           onFileSelect={mockOnFileSelect} 
           selectedFile={fileWithDuration}
         />
       );
       
-      expect(screen.getByText('2:05')).toBeInTheDocument();
+      const durationElement = container.querySelector('.file-duration');
+      expect(durationElement).toHaveTextContent('2:05');
+      unmount();
     });
   });
 
   describe('Audio file validation', () => {
-    const validAudioTypes = [
-      { name: 'test.mp3', type: 'audio/mpeg' },
-      { name: 'test.wav', type: 'audio/wav' },
-      { name: 'test.m4a', type: 'audio/mp4' },
-      { name: 'test.aac', type: 'audio/aac' },
-      { name: 'test.ogg', type: 'audio/ogg' },
-      { name: 'test.flac', type: 'audio/flac' },
-      { name: 'test.wma', type: 'audio/x-ms-wma' }
-    ];
+    it('accepts MP3 files', async () => {
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      
+      const file = createMockFile('test.mp3', 1024, 'audio/mpeg');
+      const input = document.querySelector('input[type="file"]');
+      
+      if (input) {
+        Object.defineProperty(input, 'files', {
+          value: [file],
+          writable: false,
+        });
+        
+        fireEvent.change(input);
+      }
+      
+      expect(mockOnFileSelect).toHaveBeenCalledWith(file);
+      unmount();
+    });
 
-    validAudioTypes.forEach(({ name, type }) => {
-      it(`accepts ${name} files`, async () => {
-        render(<FileUpload onFileSelect={mockOnFileSelect} />);
+    it('accepts WAV files', async () => {
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      
+      const file = createMockFile('test.wav', 1024, 'audio/wav');
+      const input = document.querySelector('input[type="file"]');
+      
+      if (input) {
+        Object.defineProperty(input, 'files', {
+          value: [file],
+          writable: false,
+        });
         
-        const file = createMockFile(name, 1024, type);
-        const input = document.querySelector('input[type="file"]');
+        fireEvent.change(input);
+      }
+      
+      expect(mockOnFileSelect).toHaveBeenCalledWith(file);
+      unmount();
+    });
+
+    it('accepts M4A files', async () => {
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      
+      const file = createMockFile('test.m4a', 1024, 'audio/mp4');
+      const input = document.querySelector('input[type="file"]');
+      
+      if (input) {
+        Object.defineProperty(input, 'files', {
+          value: [file],
+          writable: false,
+        });
         
-        // Simulate file selection by firing change event
-        if (input) {
-          Object.defineProperty(input, 'files', {
-            value: [file],
-            writable: false,
-          });
-          
-          fireEvent.change(input);
-        }
+        fireEvent.change(input);
+      }
+      
+      expect(mockOnFileSelect).toHaveBeenCalledWith(file);
+      unmount();
+    });
+
+    it('accepts AAC files', async () => {
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      
+      const file = createMockFile('test.aac', 1024, 'audio/aac');
+      const input = document.querySelector('input[type="file"]');
+      
+      if (input) {
+        Object.defineProperty(input, 'files', {
+          value: [file],
+          writable: false,
+        });
         
-        expect(mockOnFileSelect).toHaveBeenCalledWith(file);
-      });
+        fireEvent.change(input);
+      }
+      
+      expect(mockOnFileSelect).toHaveBeenCalledWith(file);
+      unmount();
+    });
+
+    it('accepts OGG files', async () => {
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      
+      const file = createMockFile('test.ogg', 1024, 'audio/ogg');
+      const input = document.querySelector('input[type="file"]');
+      
+      if (input) {
+        Object.defineProperty(input, 'files', {
+          value: [file],
+          writable: false,
+        });
+        
+        fireEvent.change(input);
+      }
+      
+      expect(mockOnFileSelect).toHaveBeenCalledWith(file);
+      unmount();
+    });
+
+    it('accepts FLAC files', async () => {
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      
+      const file = createMockFile('test.flac', 1024, 'audio/flac');
+      const input = document.querySelector('input[type="file"]');
+      
+      if (input) {
+        Object.defineProperty(input, 'files', {
+          value: [file],
+          writable: false,
+        });
+        
+        fireEvent.change(input);
+      }
+      
+      expect(mockOnFileSelect).toHaveBeenCalledWith(file);
+      unmount();
+    });
+
+    it('accepts WMA files', async () => {
+      const { unmount } = render(<FileUpload onFileSelect={mockOnFileSelect} />);
+      
+      const file = createMockFile('test.wma', 1024, 'audio/x-ms-wma');
+      const input = document.querySelector('input[type="file"]');
+      
+      if (input) {
+        Object.defineProperty(input, 'files', {
+          value: [file],
+          writable: false,
+        });
+        
+        fireEvent.change(input);
+      }
+      
+      expect(mockOnFileSelect).toHaveBeenCalledWith(file);
+      unmount();
     });
   });
 });

@@ -4,6 +4,8 @@
 // learn more: https://github.com/testing-library/jest-dom
 require('@testing-library/jest-dom');
 
+// Note: Manual cleanup is handled in individual test files with unmount()
+
 // Suppress React warnings in tests
 const originalError = console.error;
 const originalWarn = console.warn;
