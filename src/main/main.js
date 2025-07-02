@@ -3,6 +3,8 @@ require('dotenv').config();
 
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const WhisperApiClient = require('./services/whisperApiClient');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -200,11 +202,43 @@ ipcMain.handle('whisper-check-api-key', async () => {
 
 
 
-ipcMain.handle('whisper-transcribe-audio', async (event, audioFilePath, options = {}) => {
+ipcMain.handle('whisper-transcribe-audio', async (event, audioInput, options = {}) => {
+  let tempFilePath = null;
+  
   try {
     if (!whisperClient) {
       throw new Error('Whisper client not initialized. Please set your API key first.');
     }
+    
+    let audioFilePath;
+    
+    // Check if audioInput is a serialized File object or a file path
+    if (typeof audioInput === 'string') {
+      // It's a file path
+      audioFilePath = audioInput;
+    } else if (audioInput && typeof audioInput === 'object' && audioInput.arrayBuffer) {
+      // It's a serialized File object from recorded audio - save to temp file
+      console.log('Processing recorded audio file:', audioInput.name);
+      
+      const tempDir = os.tmpdir();
+      const fileExtension = audioInput.name.split('.').pop() || 'webm';
+      tempFilePath = path.join(tempDir, `whisper-temp-${Date.now()}.${fileExtension}`);
+      
+      // Convert serialized arrayBuffer back to Buffer and save
+      const uint8Array = new Uint8Array(audioInput.arrayBuffer);
+      const buffer = Buffer.from(uint8Array);
+      fs.writeFileSync(tempFilePath, buffer);
+      
+      audioFilePath = tempFilePath;
+      console.log('Saved recorded audio to temp file:', tempFilePath, 'Size:', audioInput.size);
+    } else if (audioInput && audioInput.path) {
+      // This is a file object with path property
+      audioFilePath = audioInput.path;
+    } else {
+      throw new Error('Invalid audio input. Expected file path or File object.');
+    }
+    
+    console.log('Starting transcription for:', audioFilePath);
     
     // Set up progress callback
     const onProgress = (progressData) => {
@@ -238,6 +272,16 @@ ipcMain.handle('whisper-transcribe-audio', async (event, audioFilePath, options 
         userMessage: error.userMessage || error.message
       }
     };
+  } finally {
+    // Clean up temporary file if it was created
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+        console.log('Cleaned up temporary file:', tempFilePath);
+      } catch (cleanupError) {
+        console.error('Error cleaning up temporary file:', cleanupError);
+      }
+    }
   }
 });
 

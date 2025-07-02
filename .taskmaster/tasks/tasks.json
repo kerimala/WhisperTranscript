@@ -199,7 +199,7 @@
             "title": "IPC Communication Setup",
             "description": "Establish Inter-Process Communication channels between UI and service layers with proper message handling and async communication protocols",
             "dependencies": [],
-            "details": "Set up IPC mechanisms (message passing, shared memory, or sockets) to enable communication between UI and background services. Implement message serialization/deserialization, establish communication protocols, and create async handlers for bidirectional data flow.",
+            "details": "Set up IPC mechanisms (pipes, sockets, or message queues) to enable communication between UI and backend services. Implement message serialization/deserialization, establish communication protocols, and create async handlers for bidirectional data flow.",
             "status": "pending",
             "testStrategy": ""
           },
@@ -210,19 +210,19 @@
             "dependencies": [
               1
             ],
-            "details": "Design and implement state management architecture that can handle async IPC updates, maintain data consistency, implement state synchronization mechanisms, and provide reactive updates to UI components when service layer state changes.",
+            "details": "Design and implement state management architecture that can handle async IPC updates, maintain UI state consistency, implement state synchronization mechanisms, and create state update pipelines that work with the established IPC communication.",
             "status": "pending",
             "testStrategy": ""
           },
           {
             "id": 3,
             "title": "Error Handling UI Integration",
-            "description": "Integrate comprehensive error handling mechanisms into the UI layer to manage IPC failures and service communication errors",
+            "description": "Integrate comprehensive error handling mechanisms into the UI layer with proper error propagation from IPC and state management systems",
             "dependencies": [
               1,
               2
             ],
-            "details": "Implement error boundaries, retry mechanisms, and user-friendly error displays for IPC communication failures. Create fallback states, timeout handling, and recovery procedures to maintain UI responsiveness when service layer encounters issues.",
+            "details": "Implement error handling UI components, create error boundary mechanisms for IPC failures, integrate error states into the state management system, and design user-friendly error messages and recovery options for various failure scenarios.",
             "status": "pending",
             "testStrategy": ""
           }

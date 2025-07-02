@@ -69,7 +69,8 @@
   margin: 0;
 }
 
-/* Theme toggle button */
+/* Settings and Theme toggle buttons */
+.settings-btn,
 .theme-toggle-btn {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -84,12 +85,14 @@
   backdrop-filter: blur(10px);
 }
 
+.settings-btn:hover,
 .theme-toggle-btn:hover {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
 }
 
+.settings-btn:active,
 .theme-toggle-btn:active {
   transform: translateY(0);
 }

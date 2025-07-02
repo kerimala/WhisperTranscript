@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import './Header.css';
 
-const Header = ({ version }) => {
+const Header = ({ version, onOpenSettings }) => {
   const { isDarkMode, toggleTheme } = useTheme();
   const [apiKeyStatus, setApiKeyStatus] = useState('checking');
   const [showApiKeyInfo, setShowApiKeyInfo] = useState(false);
@@ -188,6 +188,17 @@ const Header = ({ version }) => {
                </>
              )}
           </div>
+          <button 
+            className="settings-btn titlebar-no-drag focus-visible"
+            onClick={onOpenSettings}
+            aria-label="Open Settings"
+            title="Settings"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/>
+              <path d="m12 1 1.27 3.18a9 9 0 0 1 2.73.73l2.91-1.46 1.41 1.41-1.46 2.91a9 9 0 0 1 .73 2.73L23 12l-3.18 1.27a9 9 0 0 1-.73 2.73l1.46 2.91-1.41 1.41-2.91-1.46a9 9 0 0 1-2.73.73L12 23l-1.27-3.18a9 9 0 0 1-2.73-.73l-2.91 1.46-1.41-1.41 1.46-2.91a9 9 0 0 1-.73-2.73L1 12l3.18-1.27a9 9 0 0 1 .73-2.73L3.45 5.09l1.41-1.41L7.77 5.14a9 9 0 0 1 2.73-.73L12 1Z" stroke="currentColor" strokeWidth="2"/>
+            </svg>
+          </button>
           <button 
             className="theme-toggle-btn titlebar-no-drag focus-visible"
             onClick={toggleTheme}
