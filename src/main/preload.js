@@ -16,8 +16,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // readFile: (filePath) => ipcRenderer.invoke('read-file', filePath),
   // writeFile: (filePath, data) => ipcRenderer.invoke('write-file', filePath, data),
   
-  // Audio/transcription operations (we'll add these later)
-  // transcribeAudio: (audioPath) => ipcRenderer.invoke('transcribe-audio', audioPath),
+  // Whisper API operations
+  whisper: {
+    setApiKey: (apiKey) => ipcRenderer.invoke('whisper-set-api-key', apiKey),
+    validateApiKey: (apiKey) => ipcRenderer.invoke('whisper-validate-api-key', apiKey),
+    transcribeAudio: (audioPath, options) => ipcRenderer.invoke('whisper-transcribe-audio', audioPath, options),
+    testConnection: () => ipcRenderer.invoke('whisper-test-connection')
+  },
   
   // Event listeners
   onTranscriptionProgress: (callback) => {

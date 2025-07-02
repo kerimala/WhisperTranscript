@@ -4,7 +4,8 @@
   padding: var(--spacing-xl) var(--spacing-xxl);
   box-shadow: 0 2px 8px var(--color-shadow);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+  z-index: 100;
 }
 
 .app-header::before {
@@ -144,5 +145,138 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+/* Header Actions Container */
+.header-actions {
+  position: relative;
+  z-index: 200;
+}
+
+/* API Status Indicator */
+.api-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  font-size: var(--font-size-xs);
+  color: white;
+}
+
+.api-status-indicator:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.api-status-text {
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+/* Tooltip Backdrop */
+.tooltip-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9998;
+  background: transparent;
+}
+
+.api-key-info-tooltip {
+  position: absolute;
+  top: calc(100% + var(--spacing-sm));
+  right: 0;
+  z-index: 9999;
+  animation: slideDown 0.2s ease-out;
+}
+
+.tooltip-content {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-lg);
+  width: 320px;
+  color: var(--color-text);
+}
+
+.tooltip-content h4 {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.tooltip-content p {
+  margin: 0 0 var(--spacing-sm) 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.tooltip-content code {
+  display: block;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: var(--font-size-xs);
+  margin: var(--spacing-sm) 0;
+  word-break: break-all;
+}
+
+.tooltip-note {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.tooltip-note a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.tooltip-note a:hover {
+  text-decoration: underline;
+}
+
+.test-connection-btn {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin-top: var(--spacing-sm);
+}
+
+.test-connection-btn:hover {
+  background: var(--color-primary-hover);
+}
+
+.test-connection-btn:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 768px) {
+  .api-status-text {
+    display: none;
+  }
+  
+  .tooltip-content {
+    width: 280px;
+    right: -20px;
   }
 }

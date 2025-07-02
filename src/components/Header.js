@@ -1,9 +1,63 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import './Header.css';
 
 const Header = ({ version }) => {
   const { isDarkMode, toggleTheme } = useTheme();
+  const [apiKeyStatus, setApiKeyStatus] = useState('checking');
+  const [showApiKeyInfo, setShowApiKeyInfo] = useState(false);
+
+  useEffect(() => {
+    checkApiKeyStatus();
+  }, []);
+
+  const checkApiKeyStatus = async () => {
+    try {
+      const isValid = await window.electronAPI.whisper.testConnection();
+      setApiKeyStatus(isValid ? 'valid' : 'invalid');
+    } catch (error) {
+      console.error('Failed to check API key status:', error);
+      setApiKeyStatus('invalid');
+    }
+  };
+
+  const getApiKeyStatusIcon = () => {
+    switch (apiKeyStatus) {
+      case 'valid':
+        return (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" fill="#10b981" stroke="currentColor" strokeWidth="2"/>
+            <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        );
+      case 'invalid':
+        return (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" fill="#ef4444" stroke="currentColor" strokeWidth="2"/>
+            <path d="m15 9-6 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="m9 9 6 6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        );
+      default:
+        return (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" fill="#6b7280" stroke="currentColor" strokeWidth="2"/>
+            <path d="M12 6v6l4 2" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        );
+    }
+  };
+
+  const getApiKeyStatusText = () => {
+    switch (apiKeyStatus) {
+      case 'valid':
+        return 'OpenAI API Connected';
+      case 'invalid':
+        return 'API Key Required';
+      default:
+        return 'Checking API...';
+    }
+  };
 
   return (
     <header className="app-header titlebar-drag">
@@ -18,6 +72,52 @@ const Header = ({ version }) => {
           </div>
         </div>
         <div className="header-actions">
+          <div 
+            className="api-status-indicator titlebar-no-drag"
+            onClick={() => setShowApiKeyInfo(!showApiKeyInfo)}
+            title={getApiKeyStatusText()}
+          >
+            {getApiKeyStatusIcon()}
+            <span className="api-status-text">{getApiKeyStatusText()}</span>
+            {showApiKeyInfo && (
+               <>
+                 <div 
+                   className="tooltip-backdrop"
+                   onClick={() => setShowApiKeyInfo(false)}
+                 />
+                 <div className="api-key-info-tooltip">
+                   <div className="tooltip-content">
+                     <h4>API Key Configuration</h4>
+                     <p>
+                       {apiKeyStatus === 'valid' 
+                         ? 'Your OpenAI API key is configured and working properly.' 
+                         : 'To use Whisper transcription, add your OpenAI API key to the .env file:'}
+                     </p>
+                     {apiKeyStatus === 'invalid' && (
+                       <>
+                         <code>OPENAI_API_KEY=your_api_key_here</code>
+                         <p className="tooltip-note">
+                           Get your API key from: <br/>
+                           <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
+                             https://platform.openai.com/api-keys
+                           </a>
+                         </p>
+                       </>
+                     )}
+                     <button 
+                       className="test-connection-btn"
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         checkApiKeyStatus();
+                       }}
+                     >
+                       Test Connection
+                     </button>
+                   </div>
+                 </div>
+               </>
+             )}
+          </div>
           <button 
             className="theme-toggle-btn titlebar-no-drag focus-visible"
             onClick={toggleTheme}

@@ -1,8 +1,13 @@
+// Load environment variables from .env file
+require('dotenv').config();
+
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const WhisperApiClient = require('./services/whisperApiClient');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow;
+let whisperClient;
 
 function createWindow() {
   // Create the browser window
@@ -126,6 +131,99 @@ ipcMain.handle('show-audio-file-dialog', async (event) => {
 ipcMain.handle('show-save-dialog', async (event, options) => {
   const result = await dialog.showSaveDialog(mainWindow, options);
   return result;
+});
+
+// Whisper API handlers
+ipcMain.handle('whisper-set-api-key', async (event, apiKey) => {
+  try {
+    if (!whisperClient) {
+      whisperClient = new WhisperApiClient(apiKey);
+    } else {
+      whisperClient.setApiKey(apiKey);
+    }
+    
+    // Test the connection
+    const isValid = await whisperClient.testConnection();
+    return { success: true, valid: isValid };
+  } catch (error) {
+    console.error('Error setting API key:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-validate-api-key', async (event, apiKey) => {
+  try {
+    if (!whisperClient) {
+      whisperClient = new WhisperApiClient();
+    }
+    
+    const isValidFormat = whisperClient.validateApiKey(apiKey);
+    if (!isValidFormat) {
+      return { valid: false, error: 'Invalid API key format' };
+    }
+    
+    whisperClient.setApiKey(apiKey);
+    const isValid = await whisperClient.testConnection();
+    return { valid: isValid };
+  } catch (error) {
+    console.error('Error validating API key:', error);
+    return { valid: false, error: error.message };
+  }
+});
+
+ipcMain.handle('whisper-transcribe-audio', async (event, audioFilePath, options = {}) => {
+  try {
+    if (!whisperClient) {
+      throw new Error('Whisper client not initialized. Please set your API key first.');
+    }
+    
+    // Set up progress callback
+    const onProgress = (progressData) => {
+      mainWindow.webContents.send('transcription-progress', progressData);
+    };
+    
+    const result = await whisperClient.transcribeAudio(audioFilePath, {
+      ...options,
+      onProgress
+    });
+    
+    // Send completion event
+    mainWindow.webContents.send('transcription-complete', result);
+    
+    return { success: true, result };
+  } catch (error) {
+    console.error('Transcription error:', error);
+    
+    // Send error event
+    mainWindow.webContents.send('transcription-error', {
+      type: error.type || 'TRANSCRIPTION_ERROR',
+      message: error.message,
+      userMessage: error.userMessage || error.message
+    });
+    
+    return { 
+      success: false, 
+      error: {
+        type: error.type || 'TRANSCRIPTION_ERROR',
+        message: error.message,
+        userMessage: error.userMessage || error.message
+      }
+    };
+  }
+});
+
+ipcMain.handle('whisper-test-connection', async (event) => {
+  try {
+    if (!whisperClient) {
+      return { success: false, error: 'No API key set' };
+    }
+    
+    const isConnected = await whisperClient.testConnection();
+    return { success: true, connected: isConnected };
+  } catch (error) {
+    console.error('Connection test error:', error);
+    return { success: false, error: error.message };
+  }
 });
 
 // Handle app protocol for deep linking (optional)
