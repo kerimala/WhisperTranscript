@@ -149,21 +149,26 @@ const ModelDownloadManager = ({ isVisible, onClose }) => {
   };
 
   const handleVerifyModel = async (modelName) => {
+    alert('FUNCTION CALLED: handleVerifyModel for ' + modelName);
+    
     try {
       setError(null);
+      
       const result = await window.electronAPI.whisper.models.verifyIntegrity(modelName);
-      if (result.success) {
-        if (result.isValid) {
-          alert(`Model ${modelName} integrity verified successfully.`);
-        } else {
-          alert(`Model ${modelName} integrity check failed. Consider re-downloading.`);
-        }
+      
+      alert('RESULT RECEIVED: ' + JSON.stringify(result));
+      
+      if (result && result.success && result.isValid) {
+        alert(`Model ${modelName} integrity verified successfully.`);
       } else {
-        setError(`Verification failed: ${result.error}`);
+        const errorMsg = `${modelName} integrity check failed: ${result?.error || 'Unknown error'}.`;
+        alert('ERROR: ' + errorMsg);
+        setError(errorMsg);
       }
     } catch (err) {
-      console.error('Error verifying model:', err);
-      setError('Failed to verify model integrity');
+      const errorMsg = `Failed to verify model integrity: ${err.message}`;
+      alert('EXCEPTION: ' + errorMsg);
+      setError(errorMsg);
     }
   };
 

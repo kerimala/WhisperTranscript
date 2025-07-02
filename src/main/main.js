@@ -636,13 +636,18 @@ ipcMain.handle('model-get-download-status', async (event, modelName) => {
 
 ipcMain.handle('model-verify-integrity', async (event, modelName) => {
   try {
+    console.log(`[IPC] Received model-verify-integrity request for: ${modelName}`);
     if (!modelManager) {
       throw new Error('Model manager not initialized');
     }
-    return await modelManager.verifyModelIntegrity(modelName);
+    const result = await modelManager.verifyModelIntegrity(modelName);
+    console.log(`[IPC] Verification result for ${modelName}:`, JSON.stringify(result, null, 2));
+    return result;
   } catch (error) {
     console.error('Error verifying model integrity:', error);
-    return { success: false, error: error.message };
+    const errorResult = { success: false, error: error.message };
+    console.log(`[IPC] Error result for ${modelName}:`, JSON.stringify(errorResult, null, 2));
+    return errorResult;
   }
 });
 
