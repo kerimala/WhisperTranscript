@@ -1,0 +1,41 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F46E5;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#gradient)" stroke="#1E1B4B" stroke-width="8"/>
+  
+  <!-- Microphone body -->
+  <rect x="216" y="160" width="80" height="120" rx="40" ry="40" fill="white" opacity="0.9"/>
+  
+  <!-- Microphone stand -->
+  <rect x="248" y="280" width="16" height="60" fill="white" opacity="0.8"/>
+  
+  <!-- Microphone base -->
+  <ellipse cx="256" cy="350" rx="40" ry="12" fill="white" opacity="0.7"/>
+  
+  <!-- Sound waves -->
+  <path d="M 320 200 Q 340 220 320 240" stroke="white" stroke-width="6" fill="none" opacity="0.6"/>
+  <path d="M 340 180 Q 370 220 340 260" stroke="white" stroke-width="6" fill="none" opacity="0.5"/>
+  <path d="M 360 160 Q 400 220 360 280" stroke="white" stroke-width="6" fill="none" opacity="0.4"/>
+  
+  <!-- Text waves on the left -->
+  <path d="M 192 200 Q 172 220 192 240" stroke="white" stroke-width="6" fill="none" opacity="0.6"/>
+  <path d="M 172 180 Q 142 220 172 260" stroke="white" stroke-width="6" fill="none" opacity="0.5"/>
+  <path d="M 152 160 Q 112 220 152 280" stroke="white" stroke-width="6" fill="none" opacity="0.4"/>
+  
+  <!-- Whisper text effect -->
+  <text x="256" y="420" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="white" opacity="0.8">W</text>
+  
+  <!-- Small dots for transcription effect -->
+  <circle cx="180" cy="380" r="3" fill="white" opacity="0.6"/>
+  <circle cx="200" cy="385" r="3" fill="white" opacity="0.5"/>
+  <circle cx="220" cy="380" r="3" fill="white" opacity="0.6"/>
+  <circle cx="292" cy="380" r="3" fill="white" opacity="0.6"/>
+  <circle cx="312" cy="385" r="3" fill="white" opacity="0.5"/>
+  <circle cx="332" cy="380" r="3" fill="white" opacity="0.6"/>
+</svg>

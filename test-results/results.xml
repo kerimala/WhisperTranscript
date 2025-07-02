@@ -1,0 +1,669 @@
+<testsuites id="" name="" tests="76" failures="16" skipped="49" errors="0" time="9.650647999999999">
+<testsuite name="app.spec.js" timestamp="2025-07-02T08:57:56.763Z" hostname="electron" tests="19" failures="3" skipped="7" time="1.368" errors="0">
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should launch successfully" classname="app.spec.js" time="0.009">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should have correct window title" classname="app.spec.js" time="0.13">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should display main UI elements" classname="app.spec.js" time="0.107">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should have proper window dimensions" classname="app.spec.js" time="0">
+<failure message="app.spec.js:53:5 should have proper window dimensions" type="FAILURE">
+<![CDATA[  [electron] › app.spec.js:53:5 › WhisperTranscript E2E Tests › Application Launch › should have proper window dimensions 
+
+    TypeError: Cannot read properties of null (reading 'width')
+
+      53 |     test('should have proper window dimensions', async () => {
+      54 |       const windowSize = await page.viewportSize();
+    > 55 |       expect(windowSize.width).toBeGreaterThanOrEqual(800);
+         |                         ^
+      56 |       expect(windowSize.height).toBeGreaterThanOrEqual(600);
+      57 |     });
+      58 |   });
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:55:25
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/app-WhisperTranscript-E2E--3827c-ve-proper-window-dimensions-electron/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/app-WhisperTranscript-E2E--3827c-ve-proper-window-dimensions-electron/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|app-WhisperTranscript-E2E--3827c-ve-proper-window-dimensions-electron/test-failed-1.png]]
+
+[[ATTACHMENT|app-WhisperTranscript-E2E--3827c-ve-proper-window-dimensions-electron/error-context.md]]
+]]>
+</system-out>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should display upload prompt initially" classname="app.spec.js" time="0.071">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should show supported formats" classname="app.spec.js" time="0">
+<failure message="app.spec.js:67:5 should show supported formats" type="FAILURE">
+<![CDATA[  [electron] › app.spec.js:67:5 › WhisperTranscript E2E Tests › File Upload Interface › should show supported formats 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8409
+    [pid=8409][err] Debugger listening on ws://127.0.0.1:50883/b114a616-0532-48b2-963c-ec3e6bbcf7e1
+    [pid=8409][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8409][err] Debugger attached.
+    [pid=8409][err] [8409:0702/105757.479770:ERROR:process_singleton_posix.cc(339)] Failed to create /Users/kerimalagun/Library/Application Support/Electron/SingletonLock: File exists (17)
+    [pid=8409][err] 
+    [pid=8409][err] DevTools listening on ws://127.0.0.1:50893/devtools/browser/71d4c2ea-e597-4e9f-96a9-4d8f9b261c9f
+    [pid=8409][err] Waiting for the debugger to disconnect...
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should handle file input click" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should handle drag and drop events" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Responsiveness › should be responsive to window resizing" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Responsiveness › should maintain layout integrity" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Keyboard Navigation › should support tab navigation" classname="app.spec.js" time="0.266">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Keyboard Navigation › should support keyboard activation" classname="app.spec.js" time="0.715">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Accessibility › should have proper ARIA labels and roles" classname="app.spec.js" time="0.009">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Accessibility › should have sufficient color contrast" classname="app.spec.js" time="0.029">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Error Handling › should handle invalid file types gracefully" classname="app.spec.js" time="0.032">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Performance › should load within reasonable time" classname="app.spec.js" time="0">
+<failure message="app.spec.js:184:5 should load within reasonable time" type="FAILURE">
+<![CDATA[  [electron] › app.spec.js:184:5 › WhisperTranscript E2E Tests › Performance › should load within reasonable time 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8410
+    [pid=8410][err] Debugger listening on ws://127.0.0.1:50881/e8ff0ec7-501b-458c-a71b-b15cf3499d26
+    [pid=8410][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8410][err] Debugger attached.
+    [pid=8410][err] [8410:0702/105757.479770:ERROR:process_singleton_posix.cc(339)] Failed to create /Users/kerimalagun/Library/Application Support/Electron/SingletonLock: File exists (17)
+    [pid=8410][err] 
+    [pid=8410][err] DevTools listening on ws://127.0.0.1:50891/devtools/browser/b8db2967-6697-4d89-a12c-367f28557b32
+    [pid=8410][err] Waiting for the debugger to disconnect...
+    [pid=8410] <process did exit: exitCode=0, signal=null>
+    [pid=8410] starting temporary directories cleanup
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Performance › should not have memory leaks" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Cross-platform Compatibility › should display correctly on current platform" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Cross-platform Compatibility › should handle platform-specific file paths" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="app.spec.js" timestamp="2025-07-02T08:57:56.763Z" hostname="chromium" tests="19" failures="4" skipped="15" time="0.004" errors="0">
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should launch successfully" classname="app.spec.js" time="0">
+<failure message="app.spec.js:33:5 should launch successfully" type="FAILURE">
+<![CDATA[  [chromium] › app.spec.js:33:5 › WhisperTranscript E2E Tests › Application Launch › should launch successfully 
+
+    Error: electron.launch: WebSocket error: connect ECONNREFUSED 127.0.0.1:50908
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should have correct window title" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should display main UI elements" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should have proper window dimensions" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should display upload prompt initially" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should show supported formats" classname="app.spec.js" time="0.004">
+<failure message="app.spec.js:67:5 should show supported formats" type="FAILURE">
+<![CDATA[  [chromium] › app.spec.js:67:5 › WhisperTranscript E2E Tests › File Upload Interface › should show supported formats 
+
+    Error: electron.launch: WebSocket error: socket hang up
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should handle file input click" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should handle drag and drop events" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Responsiveness › should be responsive to window resizing" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Responsiveness › should maintain layout integrity" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Keyboard Navigation › should support tab navigation" classname="app.spec.js" time="0">
+<failure message="app.spec.js:129:5 should support tab navigation" type="FAILURE">
+<![CDATA[  [chromium] › app.spec.js:129:5 › WhisperTranscript E2E Tests › Keyboard Navigation › should support tab navigation 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8463
+    [pid=8463][err] Debugger listening on ws://127.0.0.1:50916/f3e957bd-47ff-400d-821b-9d7348fec816
+    [pid=8463][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8463][err] Debugger attached.
+    [pid=8463][err] 
+    [pid=8463][err] DevTools listening on ws://127.0.0.1:50919/devtools/browser/4f99ada2-6f65-46dc-987c-9bba17a2143e
+    [pid=8463][err] Waiting for the debugger to disconnect...
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Keyboard Navigation › should support keyboard activation" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Accessibility › should have proper ARIA labels and roles" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Accessibility › should have sufficient color contrast" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Error Handling › should handle invalid file types gracefully" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Performance › should load within reasonable time" classname="app.spec.js" time="0">
+<failure message="app.spec.js:184:5 should load within reasonable time" type="FAILURE">
+<![CDATA[  [chromium] › app.spec.js:184:5 › WhisperTranscript E2E Tests › Performance › should load within reasonable time 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8462
+    [pid=8462][err] Debugger listening on ws://127.0.0.1:50915/bd47fffa-fbfb-4a65-8209-5d1cb2fb8e03
+    [pid=8462][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8462][err] Debugger attached.
+    [pid=8462][err] 
+    [pid=8462][err] DevTools listening on ws://127.0.0.1:50920/devtools/browser/bd18fa0b-7866-4671-b4df-2ca46d2dd084
+    [pid=8462][err] Waiting for the debugger to disconnect...
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Performance › should not have memory leaks" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Cross-platform Compatibility › should display correctly on current platform" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Cross-platform Compatibility › should handle platform-specific file paths" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="app.spec.js" timestamp="2025-07-02T08:57:56.763Z" hostname="firefox" tests="19" failures="5" skipped="12" time="0.903" errors="0">
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should launch successfully" classname="app.spec.js" time="0">
+<failure message="app.spec.js:33:5 should launch successfully" type="FAILURE">
+<![CDATA[  [firefox] › app.spec.js:33:5 › WhisperTranscript E2E Tests › Application Launch › should launch successfully 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8473
+    [pid=8473][err] Debugger listening on ws://127.0.0.1:50924/1e6070a6-f570-4a50-9db0-b9b987f1af9a
+    [pid=8473][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8473][err] Debugger attached.
+    [pid=8473][err] [8473:0702/105800.077315:ERROR:process_singleton_posix.cc(339)] Failed to create /Users/kerimalagun/Library/Application Support/Electron/SingletonSocket: File exists (17)
+    [pid=8473][err] [8473:0702/105800.077330:ERROR:process_singleton_posix.cc(1154)] Failed to create symlinks.
+    [pid=8473][err] 
+    [pid=8473][err] DevTools listening on ws://127.0.0.1:50929/devtools/browser/5ac0b612-a69a-4246-8ac8-98ba37e9577b
+    [pid=8473][err] Waiting for the debugger to disconnect...
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should have correct window title" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should display main UI elements" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should have proper window dimensions" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should display upload prompt initially" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should show supported formats" classname="app.spec.js" time="0.218">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should handle file input click" classname="app.spec.js" time="0.66">
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should handle drag and drop events" classname="app.spec.js" time="0.025">
+<failure message="app.spec.js:81:5 should handle drag and drop events" type="FAILURE">
+<![CDATA[  [firefox] › app.spec.js:81:5 › WhisperTranscript E2E Tests › File Upload Interface › should handle drag and drop events 
+
+    Error: locator.dispatchEvent: TypeError: Failed to construct 'DragEvent': Failed to read the 'dataTransfer' property from 'DragEventInit': Failed to convert value to 'DataTransfer'.
+        at InjectedScript.dispatchEvent (<anonymous>:7222:17)
+        at eval (eval at eval (:6433:24), <anonymous>:2:22)
+        at eval (eval at evaluate (:291:30), <anonymous>:9:53)
+        at UtilityScript.evaluate (<anonymous>:293:16)
+        at UtilityScript.<anonymous> (<anonymous>:1:44)
+    Call log:
+      - waiting for locator('.drop-zone')
+
+        at InjectedScript.dispatchEvent (<anonymous>:7222:17)
+        at eval (eval at eval (:6433:24), <anonymous>:2:22)
+        at eval (eval at evaluate (:291:30), <anonymous>:9:53)
+        at UtilityScript.evaluate (<anonymous>:293:16)
+        at UtilityScript.<anonymous> (<anonymous>:1:44)
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:85:22
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/app-WhisperTranscript-E2E--bdb6e-handle-drag-and-drop-events-firefox/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/app-WhisperTranscript-E2E--bdb6e-handle-drag-and-drop-events-firefox/test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../test-results/app-WhisperTranscript-E2E--bdb6e-handle-drag-and-drop-events-firefox/error-context.md
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|app-WhisperTranscript-E2E--bdb6e-handle-drag-and-drop-events-firefox/test-failed-1.png]]
+
+[[ATTACHMENT|app-WhisperTranscript-E2E--bdb6e-handle-drag-and-drop-events-firefox/test-failed-2.png]]
+
+[[ATTACHMENT|app-WhisperTranscript-E2E--bdb6e-handle-drag-and-drop-events-firefox/error-context.md]]
+]]>
+</system-out>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Responsiveness › should be responsive to window resizing" classname="app.spec.js" time="0">
+<failure message="app.spec.js:101:5 should be responsive to window resizing" type="FAILURE">
+<![CDATA[  [firefox] › app.spec.js:101:5 › WhisperTranscript E2E Tests › Application Responsiveness › should be responsive to window resizing 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8525
+    [pid=8525][err] Debugger listening on ws://127.0.0.1:50968/226bf145-04a3-4bdf-8159-e40464a5f674
+    [pid=8525][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8525][err] Debugger attached.
+    [pid=8525][err] 
+    [pid=8525][err] DevTools listening on ws://127.0.0.1:50974/devtools/browser/0dc2cb78-c861-4f85-b4d7-1464e61adabe
+    [pid=8525][err] Waiting for the debugger to disconnect...
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Responsiveness › should maintain layout integrity" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Keyboard Navigation › should support tab navigation" classname="app.spec.js" time="0">
+<failure message="app.spec.js:129:5 should support tab navigation" type="FAILURE">
+<![CDATA[  [firefox] › app.spec.js:129:5 › WhisperTranscript E2E Tests › Keyboard Navigation › should support tab navigation 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8486
+    [pid=8486][err] Debugger listening on ws://127.0.0.1:50936/3af25019-a074-4bca-98b6-7e55e46f15bf
+    [pid=8486][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8486][err] Debugger attached.
+    [pid=8486][err] 
+    [pid=8486][err] DevTools listening on ws://127.0.0.1:50939/devtools/browser/730b536d-4d6c-4908-8701-d0170cc549cc
+    [pid=8486][err] Waiting for the debugger to disconnect...
+    [pid=8486] <process did exit: exitCode=0, signal=null>
+    [pid=8486] starting temporary directories cleanup
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Keyboard Navigation › should support keyboard activation" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Accessibility › should have proper ARIA labels and roles" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Accessibility › should have sufficient color contrast" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Error Handling › should handle invalid file types gracefully" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Performance › should load within reasonable time" classname="app.spec.js" time="0">
+<failure message="app.spec.js:184:5 should load within reasonable time" type="FAILURE">
+<![CDATA[  [firefox] › app.spec.js:184:5 › WhisperTranscript E2E Tests › Performance › should load within reasonable time 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8492
+    [pid=8492][err] Debugger listening on ws://127.0.0.1:50941/c2a35716-1c80-4030-a4e0-23a24821cde8
+    [pid=8492][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8492][err] Debugger attached.
+    [pid=8492][err] 
+    [pid=8492][err] DevTools listening on ws://127.0.0.1:50945/devtools/browser/8e17f79e-bfcd-435d-9bd5-a761fa40dc6c
+    [pid=8492][err] Waiting for the debugger to disconnect...
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Performance › should not have memory leaks" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Cross-platform Compatibility › should display correctly on current platform" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Cross-platform Compatibility › should handle platform-specific file paths" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+<testsuite name="app.spec.js" timestamp="2025-07-02T08:57:56.763Z" hostname="webkit" tests="19" failures="4" skipped="15" time="0" errors="0">
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should launch successfully" classname="app.spec.js" time="0">
+<failure message="app.spec.js:33:5 should launch successfully" type="FAILURE">
+<![CDATA[  [webkit] › app.spec.js:33:5 › WhisperTranscript E2E Tests › Application Launch › should launch successfully 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8501
+    [pid=8501][err] Debugger listening on ws://127.0.0.1:50944/c1e334bb-c216-4019-870d-43476125db8b
+    [pid=8501][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8501][err] Debugger attached.
+    [pid=8501][err] 
+    [pid=8501][err] DevTools listening on ws://127.0.0.1:50948/devtools/browser/4121f299-acd7-4381-85a2-8a8f8b666246
+    [pid=8501][err] Waiting for the debugger to disconnect...
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should have correct window title" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should display main UI elements" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Launch › should have proper window dimensions" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should display upload prompt initially" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should show supported formats" classname="app.spec.js" time="0">
+<failure message="app.spec.js:67:5 should show supported formats" type="FAILURE">
+<![CDATA[  [webkit] › app.spec.js:67:5 › WhisperTranscript E2E Tests › File Upload Interface › should show supported formats 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8508
+    [pid=8508][err] Debugger listening on ws://127.0.0.1:50952/824205fa-783b-42a2-85a0-270e6b6a5029
+    [pid=8508][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8508][err] Debugger attached.
+    [pid=8508][err] 
+    [pid=8508][err] DevTools listening on ws://127.0.0.1:50959/devtools/browser/ebd97a6b-aa33-47a4-9155-ff8d1bec967c
+    [pid=8508][err] Waiting for the debugger to disconnect...
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should handle file input click" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › File Upload Interface › should handle drag and drop events" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Responsiveness › should be responsive to window resizing" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Application Responsiveness › should maintain layout integrity" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Keyboard Navigation › should support tab navigation" classname="app.spec.js" time="0">
+<failure message="app.spec.js:129:5 should support tab navigation" type="FAILURE">
+<![CDATA[  [webkit] › app.spec.js:129:5 › WhisperTranscript E2E Tests › Keyboard Navigation › should support tab navigation 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8509
+    [pid=8509][err] Debugger listening on ws://127.0.0.1:50954/13898e86-2481-425f-8493-7551010805c0
+    [pid=8509][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8509][err] Debugger attached.
+    [pid=8509][err] 
+    [pid=8509][err] DevTools listening on ws://127.0.0.1:50958/devtools/browser/269e8f78-2d68-4d0e-be36-dce4c1b0a45c
+    [pid=8509][err] Waiting for the debugger to disconnect...
+    [pid=8509] <process did exit: exitCode=0, signal=null>
+    [pid=8509] starting temporary directories cleanup
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Keyboard Navigation › should support keyboard activation" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Accessibility › should have proper ARIA labels and roles" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Accessibility › should have sufficient color contrast" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Error Handling › should handle invalid file types gracefully" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Performance › should load within reasonable time" classname="app.spec.js" time="0">
+<failure message="app.spec.js:184:5 should load within reasonable time" type="FAILURE">
+<![CDATA[  [webkit] › app.spec.js:184:5 › WhisperTranscript E2E Tests › Performance › should load within reasonable time 
+
+    Error: electron.launch: Target page, context or browser has been closed
+    Browser logs:
+
+    <launching> /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron -r /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/node_modules/playwright-core/lib/server/electron/loader.js --inspect=0 --remote-debugging-port=0 /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/src/main/main.js
+    <launched> pid=8526
+    [pid=8526][err] Debugger listening on ws://127.0.0.1:50967/90465502-924d-4be5-879e-8544d50410c9
+    [pid=8526][err] For help, see: https://nodejs.org/en/docs/inspector
+    [pid=8526][err] Debugger attached.
+    [pid=8526][err] 
+    [pid=8526][err] DevTools listening on ws://127.0.0.1:50973/devtools/browser/358e9447-5a47-47de-93d7-e3970ad17431
+    [pid=8526][err] Waiting for the debugger to disconnect...
+    [pid=8526] <process did exit: exitCode=0, signal=null>
+    [pid=8526] starting temporary directories cleanup
+
+       9 |   test.beforeAll(async () => {
+      10 |     // Launch Electron app
+    > 11 |     electronApp = await electron.launch({
+         |                   ^
+      12 |       args: [path.join(__dirname, '../../src/main/main.js')],
+      13 |       env: {
+      14 |         ...process.env,
+        at /Users/kerimalagun/Documents/Personal/Projects/WhisperTranscript/tests/e2e/app.spec.js:11:19
+]]>
+</failure>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Performance › should not have memory leaks" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Cross-platform Compatibility › should display correctly on current platform" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+<testcase name="WhisperTranscript E2E Tests › Cross-platform Compatibility › should handle platform-specific file paths" classname="app.spec.js" time="0">
+<skipped>
+</skipped>
+</testcase>
+</testsuite>
+</testsuites>

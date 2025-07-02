@@ -1,0 +1,441 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Project Scaffolding and Build System Setup",
+        "description": "Set up the initial project structure for the WhisperDesk application using Electron, React, and Node.js. This includes configuring the build pipeline for cross-platform (Windows & macOS) deployment.",
+        "details": "Use `create-electron-app` or a similar boilerplate. Configure the project with React for the renderer process and Node.js for the main process. Set up Electron Builder for creating `.exe` and `.app` installers. Initialize a Git repository and create a basic `README.md`.",
+        "testStrategy": "Verify that the basic Electron application window launches successfully on both Windows and macOS. Confirm that the build process generates valid installers for both platforms.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "in-progress",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Electron/React boilerplate setup",
+            "description": "Set up the foundational Electron application with React integration, including project structure, dependencies, and basic configuration files",
+            "dependencies": [],
+            "details": "Initialize Electron project with React framework, configure webpack for renderer process, set up main process entry point, install required dependencies (electron, react, react-dom), create basic window management, and establish communication between main and renderer processes",
+            "status": "done",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Build pipeline configuration",
+            "description": "Configure automated build system for packaging and distributing the Electron application across multiple platforms",
+            "dependencies": [
+              1
+            ],
+            "details": "Set up electron-builder or electron-forge for packaging, configure build scripts in package.json, implement code signing for security, set up automated builds with CI/CD integration, configure output directories and asset handling, and optimize bundle size",
+            "status": "done",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Cross-platform testing",
+            "description": "Implement comprehensive testing strategy to ensure application functionality across Windows, macOS, and Linux platforms",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Set up testing frameworks (Jest, Spectron/Playwright), create unit tests for React components, implement integration tests for Electron main/renderer communication, configure platform-specific test environments, set up automated testing in CI/CD pipeline, and validate UI/UX consistency across operating systems",
+            "status": "in-progress",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Core UI Implementation with Dark Mode",
+        "description": "Develop the main user interface components as specified in the PRD, including a dark mode default theme, Record/Upload buttons, a transcript display area, and status indicators.",
+        "details": "Using React, create a main component for the application window. Implement CSS-in-JS or CSS Modules for styling, ensuring a default dark theme. Create placeholder components for the two main buttons ('Record', 'Upload'), a large text area for the transcript, and a status bar for messages like 'Processing...', 'Error', 'Completed'.",
+        "testStrategy": "Manually review the UI on both platforms to ensure it matches the minimal design spec. Verify that the dark mode is applied correctly. Check that UI elements are responsive to window resizing.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Component structure design",
+            "description": "Design and implement the foundational component architecture with proper separation of concerns, component hierarchy, and reusable UI elements",
+            "dependencies": [],
+            "details": "Create base component structure, define props interfaces, establish component composition patterns, and implement core layout components with proper TypeScript definitions",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Dark theme implementation",
+            "description": "Implement comprehensive dark theme support with CSS-in-JS styling system and theme context management",
+            "dependencies": [
+              1
+            ],
+            "details": "Set up theme provider, define color palettes for light/dark modes, implement CSS-in-JS styling with theme variables, and create theme toggle functionality",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Responsive layout development",
+            "description": "Develop responsive design system with breakpoints, flexible grid layouts, and mobile-first approach",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implement responsive breakpoints, create flexible grid system, optimize layouts for mobile/tablet/desktop, and ensure proper touch interactions",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Status indicator system",
+            "description": "Build dynamic status indicator system with visual feedback, state management, and real-time updates",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Create status indicator components, implement state-based visual feedback, add loading states, error handling, and success notifications with proper accessibility",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Implement Audio Capture and File Import",
+        "description": "Implement the functionality for capturing audio from the user's microphone and importing existing audio files.",
+        "details": "For the 'Record' button, use the `navigator.mediaDevices.getUserMedia` API in the renderer process to access the microphone and record audio into a Blob. For the 'Upload' button, use Electron's `dialog.showOpenDialog` API to allow users to select local files (MP3, WAV, M4A). The selected/recorded audio should be stored in a state management solution, ready for transcription.",
+        "testStrategy": "Test the 'Record' button by recording a short audio clip and ensuring the data is captured. Test the 'Upload' button by selecting various supported audio formats and verifying they are loaded correctly into the application.",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Microphone Access Implementation",
+            "description": "Implement browser API integration for microphone access with proper permission handling and audio stream management",
+            "dependencies": [],
+            "details": "Develop microphone access functionality using Web Audio API or MediaDevices API. Include permission request handling, error management for denied access, audio stream initialization, and proper cleanup. Ensure cross-browser compatibility and handle edge cases like device unavailability.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "File Import Handler Development",
+            "description": "Create file import system with Electron dialog integration and file validation",
+            "dependencies": [],
+            "details": "Implement file import functionality using Electron's dialog API for file selection. Include file type validation, error handling for unsupported formats, file reading mechanisms, and integration with the application's data processing pipeline. Ensure proper file path handling and security considerations.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Develop Whisper Cloud API Client Service (Phase 1)",
+        "description": "Create a Node.js service within the Electron main process to handle communication with the OpenAI Whisper Cloud API for transcription.",
+        "details": "Create a module in the main process that accepts an audio blob or file path. This module will use `axios` or `node-fetch` to make a secure HTTPS POST request to the Whisper API endpoint. It should handle API key management (initially hardcoded, later configurable), multipart/form-data encoding for the audio file, and implement error handling with retry/back-off logic for API rate limits or failures.",
+        "testStrategy": "Create unit tests that mock the Whisper API endpoint. Test the service with a sample audio file and verify that it constructs the correct API request. Test error handling for simulated 429 (rate limit) and 500 (server error) responses.",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "API Request Construction",
+            "description": "Implement secure API request construction with proper authentication, multipart encoding support, and request formatting for external service communication.",
+            "dependencies": [],
+            "details": "Design and implement the core API request building functionality including headers, authentication tokens, multipart form data encoding, request body serialization, and URL construction with proper parameter encoding.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Error Handling Implementation",
+            "description": "Develop comprehensive error handling system for API responses, network failures, authentication errors, and validation issues with proper error categorization and logging.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create error handling mechanisms for HTTP status codes, network timeouts, authentication failures, rate limiting responses, malformed responses, and business logic errors with appropriate error messages and logging.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Retry Logic Development",
+            "description": "Implement intelligent retry mechanism with exponential backoff, rate limit handling, and configurable retry policies for failed API requests.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Build retry logic with exponential backoff algorithm, maximum retry limits, rate limit detection and handling, circuit breaker pattern implementation, and configurable retry policies based on error types.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Display API Transcription in UI",
+        "description": "Connect the UI to the Whisper API service, send the captured audio for transcription, and display the returned text in the transcript pane.",
+        "details": "Use Electron's IPC (Inter-Process Communication) with `ipcMain` and `ipcRenderer` to trigger the API call from the UI. When the audio is ready (from Task 3), send it to the main process. Await the response from the API service (Task 4). On success, parse the JSON response, concatenate the text from the segments, and update the React state to display the full transcript. Update the status indicator throughout the process.",
+        "testStrategy": "Perform an end-to-end test: record a sentence, see the status change to 'Processing...', and verify the correct transcript appears. Repeat for an uploaded file. Test the copy-to-clipboard functionality.",
+        "priority": "high",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "IPC Communication Setup",
+            "description": "Establish Inter-Process Communication channels between UI and service layers with proper message handling and async communication protocols",
+            "dependencies": [],
+            "details": "Set up IPC mechanisms (message passing, shared memory, or sockets) to enable communication between UI and background services. Implement message serialization/deserialization, establish communication protocols, and create async handlers for bidirectional data flow.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "State Management Implementation",
+            "description": "Implement centralized state management system to handle async updates and maintain consistency across UI and service layers",
+            "dependencies": [
+              1
+            ],
+            "details": "Design and implement state management architecture that can handle async IPC updates, maintain data consistency, implement state synchronization mechanisms, and provide reactive updates to UI components when service layer state changes.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Error Handling UI Integration",
+            "description": "Integrate comprehensive error handling mechanisms into the UI layer to manage IPC failures and service communication errors",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implement error boundaries, retry mechanisms, and user-friendly error displays for IPC communication failures. Create fallback states, timeout handling, and recovery procedures to maintain UI responsiveness when service layer encounters issues.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Package Local Whisper Inference Engine (Phase 2)",
+        "description": "Set up a local transcription service by packaging a Python environment with OpenAI's Whisper library, to be managed by the Electron app.",
+        "details": "Create a Python script that uses a lightweight web framework like Flask or FastAPI to expose a local HTTP endpoint (e.g., `POST /transcribe`). This script will load a pre-selected Whisper model (e.g., 'base') and use it to transcribe audio data sent in the request. The Electron app will be responsible for starting and stopping this Python process as a child process.",
+        "testStrategy": "Run the Python script independently and use a tool like cURL or Postman to send an audio file to the local endpoint. Verify that it returns a valid transcription JSON. Test starting/stopping the Python process from Electron.",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Python Service Setup",
+            "description": "Set up the Python backend service with proper configuration, API endpoints, and communication protocols for integration with the Electron frontend",
+            "dependencies": [],
+            "details": "Configure Python service architecture, establish REST/WebSocket APIs, implement error handling, set up logging, and ensure proper service initialization and shutdown procedures",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Electron Process Management",
+            "description": "Implement Electron process management to handle Python service lifecycle, inter-process communication, and cross-language integration",
+            "dependencies": [
+              1
+            ],
+            "details": "Create process spawning and monitoring for Python service, establish IPC channels, implement error recovery mechanisms, handle service startup/shutdown coordination, and manage cross-platform process lifecycle",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Implement Mode Switching and Local Model Management",
+        "description": "Implement the settings panel allowing users to switch between 'Cloud' and 'Local' transcription modes and manage local model downloads.",
+        "details": "Add a new 'Settings' view/modal in the React UI. Include a toggle switch for 'Cloud' vs 'Local'. When 'Local' is selected, display options to download different Whisper model sizes (e.g., tiny, base, small). Implement a download manager that fetches the model files from a source like Hugging Face and stores them in the app's user data directory. The app's transcription logic should now conditionally call either the cloud API (Task 4) or the local server (Task 6) based on this setting.",
+        "testStrategy": "Test the UI toggle: switch to 'Local' and confirm transcription requests are sent to the localhost server. Switch back to 'Cloud' and verify requests go to the OpenAI API. Test the model downloader and ensure the local engine can load the downloaded model.",
+        "priority": "medium",
+        "dependencies": [
+          5,
+          6
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Settings UI Development",
+            "description": "Develop user interface components for configuration management including service mode selection, model preferences, and system settings with proper validation and user feedback mechanisms.",
+            "dependencies": [],
+            "details": "Create responsive UI forms, input validation, configuration persistence, and real-time preview of settings changes. Include accessibility features and error handling for invalid configurations.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Model Download System",
+            "description": "Implement automated model downloading, verification, and storage system with progress tracking, resume capability, and integrity checking for AI model files.",
+            "dependencies": [],
+            "details": "Build download manager with chunked downloads, checksum verification, storage optimization, bandwidth throttling, and error recovery. Include model metadata management and version control.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Service Switching Logic",
+            "description": "Develop dynamic service mode switching system that seamlessly transitions between different AI service configurations while maintaining session state and user context.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implement service registry, configuration loading/unloading, state preservation during switches, fallback mechanisms, and service health monitoring. Ensure smooth transitions without data loss.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Create Global Hotkey Listener (Phase 3)",
+        "description": "Implement a background listener that detects a system-wide hotkey combination to activate the dictation feature from any application.",
+        "details": "In the Electron main process, use the `globalShortcut` module. Register a default hotkey (e.g., 'Ctrl+Shift+W'). Implement logic in the settings panel (from Task 7) to allow the user to customize this hotkey, ensuring to unregister the old one and register the new one. Handle potential registration failures if the hotkey is already in use by another application.",
+        "testStrategy": "Start the app and minimize it. Press the default hotkey while in another application (e.g., a text editor) and verify that the registered callback function is triggered (e.g., by logging to the console). Test changing the hotkey in settings and confirm the new one works.",
+        "priority": "low",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Hotkey Registration",
+            "description": "Implement hotkey registration functionality using Electron's globalShortcut API to register and manage keyboard shortcuts for the application",
+            "dependencies": [],
+            "details": "Set up global hotkey registration system that can capture keyboard combinations and bind them to application functions. This includes handling registration, unregistration, and conflict detection for hotkeys.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Customization Handler",
+            "description": "Create a customization handler system that allows users to configure and modify hotkey bindings through a user interface",
+            "dependencies": [
+              1
+            ],
+            "details": "Develop the interface and logic for users to customize their hotkey preferences, including validation of key combinations, saving user preferences, and applying changes to the registered hotkeys.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Implement Floating Dictation Mini-Window",
+        "description": "Create a small, borderless floating window that appears when the global hotkey is pressed, ready to record audio.",
+        "details": "When the global hotkey callback is triggered, create a new `BrowserWindow` with `frame: false`, `transparent: true`, and `alwaysOnTop: true`. This window will contain a simple UI: a microphone icon and a status indicator. It should immediately start recording audio upon appearing. The window should close automatically after a period of silence or when the user clicks away.",
+        "testStrategy": "Press the hotkey and verify a small, floating window appears on top of all other applications. Confirm it starts recording. Test that the window disappears correctly after use.",
+        "priority": "low",
+        "dependencies": [
+          8
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Window Creation Logic",
+            "description": "Extract and implement the core window creation functionality including window initialization, configuration, and OS-level window instantiation. Handle window properties such as size, position, title, and initial state.",
+            "dependencies": [],
+            "details": "Create dedicated modules for window creation that handle OS-specific window APIs, window property configuration, and initial window setup. Include error handling for window creation failures and validation of window parameters.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement Window Lifecycle Management",
+            "description": "Develop comprehensive window lifecycle management system to handle window state transitions, positioning logic, show/hide operations, minimize/maximize functionality, and proper window cleanup and disposal.",
+            "dependencies": [
+              1
+            ],
+            "details": "Build state management for window lifecycle events including creation, visibility changes, resize operations, move operations, focus management, and destruction. Implement window positioning algorithms and state persistence across application sessions.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Enable System-Wide Automated Pasting",
+        "description": "Integrate the full system-wide dictation flow: hotkey activation, recording via the mini-window, transcription, and automatic pasting of the result into the previously active application.",
+        "details": "Combine the previous tasks. The flow is: hotkey (Task 8) -> mini-window appears and records (Task 9) -> audio is sent for transcription (using the mode selected in Task 7) -> on receiving the transcript, use the `clipboard` module to copy the text and the `robotjs` library (or equivalent OS-level automation tool) to simulate a `Ctrl+V`/`Cmd+V` paste command. The paste action must target the application that had focus before the hotkey was pressed.",
+        "testStrategy": "Open a text editor. Press the hotkey, speak a sentence into the mini-window, and wait. Verify that the transcribed text is automatically pasted into the text editor. Test this flow in multiple applications (browser, email client, etc.).",
+        "priority": "low",
+        "dependencies": [
+          7,
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Focus tracking implementation",
+            "description": "Implement OS-level focus tracking to monitor active windows and applications across different operating systems",
+            "dependencies": [],
+            "details": "Develop cross-platform focus detection using native APIs (Win32 for Windows, Accessibility API for macOS, X11/Wayland for Linux). Handle window state changes, application switching, and focus events with proper error handling and fallback mechanisms.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Clipboard integration",
+            "description": "Build robust clipboard management system for cross-platform copy/paste operations and data handling",
+            "dependencies": [],
+            "details": "Implement clipboard monitoring, data format detection (text, images, files), and secure clipboard operations. Include clipboard history tracking, format conversion utilities, and proper memory management for large clipboard data.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Automation library setup",
+            "description": "Establish core automation framework with OS-level interaction capabilities and control flow management",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Set up automation engine with keyboard/mouse simulation, window manipulation, and process control. Implement command queuing, execution scheduling, and error recovery mechanisms. Create abstraction layer for cross-platform automation primitives.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Cross-platform testing",
+            "description": "Develop comprehensive testing suite for validating automation functionality across Windows, macOS, and Linux environments",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Create automated test scenarios covering focus tracking accuracy, clipboard operations, and automation library functionality. Implement platform-specific test cases, performance benchmarks, and compatibility validation. Set up CI/CD pipeline for multi-platform testing.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-07-02T00:25:27.046Z",
+      "updated": "2025-07-02T08:49:56.676Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

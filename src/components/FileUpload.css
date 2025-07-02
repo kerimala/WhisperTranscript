@@ -1,0 +1,252 @@
+.file-upload-container {
+  width: 100%;
+}
+
+.drop-zone {
+  border: 2px dashed #cbd5e0;
+  border-radius: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  background: #f8f9fa;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  position: relative;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drop-zone:hover {
+  border-color: #667eea;
+  background: #f1f3ff;
+}
+
+.drop-zone.drag-over {
+  border-color: #667eea;
+  background: #e6f3ff;
+  transform: scale(1.02);
+}
+
+.drop-zone.has-file {
+  border-style: solid;
+  border-color: #28a745;
+  background: #f8fff9;
+  cursor: default;
+}
+
+.drop-zone.has-file:hover {
+  background: #f8fff9;
+  border-color: #28a745;
+}
+
+.upload-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.upload-icon {
+  color: #6c757d;
+  opacity: 0.7;
+}
+
+.upload-prompt h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #495057;
+}
+
+.upload-prompt p {
+  margin: 0;
+  font-size: 16px;
+  color: #6c757d;
+}
+
+.browse-link {
+  background: none;
+  border: none;
+  color: #667eea;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  font-weight: 600;
+}
+
+.browse-link:hover {
+  color: #5a67d8;
+}
+
+.supported-formats {
+  margin-top: 8px;
+}
+
+.supported-formats small {
+  color: #868e96;
+  font-size: 12px;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 500px;
+  text-align: left;
+}
+
+.file-icon {
+  color: #28a745;
+  flex-shrink: 0;
+}
+
+.file-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #212529;
+  word-break: break-word;
+}
+
+.file-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  color: #6c757d;
+}
+
+.file-size,
+.file-duration {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-duration::before {
+  content: '•';
+  margin-right: 4px;
+}
+
+.change-file-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.change-file-btn:hover {
+  background: #5a6268;
+  transform: translateY(-1px);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .drop-zone {
+    padding: 30px 16px;
+    min-height: 160px;
+  }
+  
+  .upload-prompt h3 {
+    font-size: 18px;
+  }
+  
+  .upload-prompt p {
+    font-size: 14px;
+  }
+  
+  .file-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .file-meta {
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .file-duration::before {
+    display: none;
+  }
+  
+  .change-file-btn {
+    align-self: stretch;
+    text-align: center;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .drop-zone {
+    border-color: #4a5568;
+    background: #2d3748;
+  }
+  
+  .drop-zone:hover {
+    border-color: #667eea;
+    background: #3d4852;
+  }
+  
+  .drop-zone.drag-over {
+    background: #2a4a6b;
+  }
+  
+  .drop-zone.has-file {
+    border-color: #48bb78;
+    background: #1a2f1a;
+  }
+  
+  .drop-zone.has-file:hover {
+    background: #1a2f1a;
+  }
+  
+  .upload-prompt h3 {
+    color: #e2e8f0;
+  }
+  
+  .upload-prompt p {
+    color: #a0aec0;
+  }
+  
+  .file-name {
+    color: #e2e8f0;
+  }
+  
+  .file-meta {
+    color: #a0aec0;
+  }
+  
+  .supported-formats small {
+    color: #718096;
+  }
+}
+
+/* Animation for file selection */
+.file-info {
+  animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

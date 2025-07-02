@@ -1,0 +1,93 @@
+{
+	"meta": {
+		"generatedAt": "2025-07-02T00:35:35.317Z",
+		"tasksAnalyzed": 10,
+		"totalTasks": 10,
+		"analysisCount": 10,
+		"thresholdScore": 5,
+		"projectName": "Taskmaster",
+		"usedResearch": true
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 1,
+			"taskTitle": "Project Scaffolding and Build System Setup",
+			"complexityScore": 6,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Break into: 1) Electron/React boilerplate setup, 2) Build pipeline configuration, 3) Cross-platform testing",
+			"reasoning": "Moderate complexity due to multi-technology stack integration (Electron+React+Node.js) and cross-platform build requirements. Cyclomatic complexity increases with build pipeline logic[1][3]."
+		},
+		{
+			"taskId": 2,
+			"taskTitle": "Core UI Implementation with Dark Mode",
+			"complexityScore": 7,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Split into: 1) Component structure design, 2) Dark theme implementation, 3) Responsive layout development, 4) Status indicator system",
+			"reasoning": "High cognitive complexity from managing CSS-in-JS, responsive design, and stateful UI elements. Halstead metrics would show increased vocabulary from multiple styling approaches[1][3]."
+		},
+		{
+			"taskId": 3,
+			"taskTitle": "Implement Audio Capture and File Import",
+			"complexityScore": 5,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Separate: 1) Microphone access implementation, 2) File import handler development",
+			"reasoning": "Moderate complexity from handling browser APIs and Electron file dialogs. Maintainability index would benefit from clear separation of concerns[1][3]."
+		},
+		{
+			"taskId": 4,
+			"taskTitle": "Develop Whisper Cloud API Client Service (Phase 1)",
+			"complexityScore": 8,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Break into: 1) API request construction, 2) Error handling implementation, 3) Retry logic development",
+			"reasoning": "High complexity from secure API communication, multipart encoding, and rate-limit handling. Cyclomatic complexity increases with error/retry logic[1][3]."
+		},
+		{
+			"taskId": 5,
+			"taskTitle": "Display API Transcription in UI",
+			"complexityScore": 7,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Split into: 1) IPC communication setup, 2) State management implementation, 3) Error handling UI integration",
+			"reasoning": "Complexity from managing async IPC communication and state updates. Coupling between UI and service layers increases maintainability challenges[1][3]."
+		},
+		{
+			"taskId": 6,
+			"taskTitle": "Package Local Whisper Inference Engine (Phase 2)",
+			"complexityScore": 6,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Separate: 1) Python service setup, 2) Electron process management",
+			"reasoning": "Moderate complexity from cross-language integration and process lifecycle management. Depth of inheritance not applicable but inter-process coupling exists[1][3]."
+		},
+		{
+			"taskId": 7,
+			"taskTitle": "Implement Mode Switching and Local Model Management",
+			"complexityScore": 7,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Break into: 1) Settings UI development, 2) Model download system, 3) Service switching logic",
+			"reasoning": "Complexity from managing multiple service modes and file system operations. Halstead metrics would show increased vocabulary from configuration management[1][3]."
+		},
+		{
+			"taskId": 8,
+			"taskTitle": "Create Global Hotkey Listener (Phase 3)",
+			"complexityScore": 4,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Split into: 1) Hotkey registration, 2) Customization handler",
+			"reasoning": "Low complexity due to focused Electron API usage. Maintainability index remains high with clear separation of concerns[1][3]."
+		},
+		{
+			"taskId": 9,
+			"taskTitle": "Implement Floating Dictation Mini-Window",
+			"complexityScore": 5,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Separate: 1) Window creation logic, 2) Lifecycle management",
+			"reasoning": "Moderate complexity from managing window states and OS-level interactions. Cognitive complexity increases with window positioning logic[1][3]."
+		},
+		{
+			"taskId": 10,
+			"taskTitle": "Enable System-Wide Automated Pasting",
+			"complexityScore": 9,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Break into: 1) Focus tracking implementation, 2) Clipboard integration, 3) Automation library setup, 4) Cross-platform testing",
+			"reasoning": "Highest complexity from OS-level automation, clipboard management, and cross-platform compatibility. Cyclomatic complexity spikes with multiple control paths[1][3]."
+		}
+	]
+}
