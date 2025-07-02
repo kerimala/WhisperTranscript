@@ -21,5 +21,9 @@ node_modules/
 *.sln
 *.sw?
 
+# Build outputs and distribution files
+dist/
+build/
+
 # OS specific
 .DS_Store
