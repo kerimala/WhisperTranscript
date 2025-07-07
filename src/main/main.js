@@ -153,10 +153,34 @@ ipcMain.handle('whisper-local-restart-service', async () => {
 
 ipcMain.handle('whisper-local-get-status', async () => {
   try {
-    const status = whisperLocalClient.getServiceStatus();
-    return { success: true, status };
+    const statusObj = whisperLocalClient.getServiceStatus();
+    
+    // Convert complex status object to simple status string for UI
+    let status = 'unknown';
+    if (statusObj.isStarting) {
+      status = 'starting';
+    } else if (statusObj.isRunning && statusObj.isReady) {
+      status = 'running';
+    } else if (statusObj.isRunning && !statusObj.isReady) {
+      status = 'starting';
+    } else {
+      status = 'stopped';
+    }
+    
+    return { 
+      success: true, 
+      status,
+      isRunning: statusObj.isRunning,
+      isReady: statusObj.isReady,
+      isStarting: statusObj.isStarting,
+      processId: statusObj.processId,
+      uptime: statusObj.uptime,
+      restartAttempts: statusObj.restartAttempts,
+      lastHealthCheck: statusObj.lastHealthCheck,
+      currentModel: statusObj.currentModel
+    };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, status: 'error' };
   }
 });
 
@@ -449,20 +473,24 @@ ipcMain.handle('whisper-check-api-key', async () => {
 
 
 ipcMain.handle('whisper-transcribe-audio', async (event, audioInput, options = {}) => {
+  if (!serviceRegistry) {
+    console.error('ServiceRegistry not initialized');
+    return { success: false, error: 'ServiceRegistry not initialized' };
+  }
   let tempFilePath = null;
-  
+
   try {
     let audioFilePath;
-    
-    // Check if audioInput is a serialized File object or a file path
+
+    // Check if audioInput is a file path or a serialized File object
     if (typeof audioInput === 'string') {
-      // It's a file path
+      // It's a file path from a dialog
       audioFilePath = audioInput;
     } else if (audioInput && typeof audioInput === 'object' && audioInput.arrayBuffer) {
       // It's a serialized File object from recorded audio - save to temp file
       console.log('Processing recorded audio file:', audioInput.name);
       
-      const tempDir = os.tmpdir();
+      const tempDir = os.tmpdir(); // Use os.tmpdir() as 'app' is not in scope
       const fileExtension = audioInput.name.split('.').pop() || 'webm';
       tempFilePath = path.join(tempDir, `whisper-temp-${Date.now()}.${fileExtension}`);
       
@@ -474,62 +502,66 @@ ipcMain.handle('whisper-transcribe-audio', async (event, audioInput, options = {
       audioFilePath = tempFilePath;
       console.log('Saved recorded audio to temp file:', tempFilePath, 'Size:', audioInput.size);
     } else if (audioInput && audioInput.path) {
-      // This is a file object with path property
+      // It's a file object from a dialog (fallback)
       audioFilePath = audioInput.path;
     } else {
-      throw new Error('Invalid audio input. Expected file path or File object.');
+      throw new Error('Invalid audio input provided');
     }
-    
-    console.log(`Starting transcription using ServiceRegistry for:`, audioFilePath);
-    
-    // Set up progress callback
+
+    // Define a progress callback to send updates to the renderer
     const onProgress = (progressData) => {
-      mainWindow.webContents.send('transcription-progress', progressData);
+      mainWindow?.webContents.send('transcription-progress', progressData);
     };
-    
-    // Use ServiceRegistry for transcription with automatic fallback
+
     const transcriptionOptions = {
       ...options,
-      onProgress
+      onProgress,
     };
-    
+
+    // Use the service registry to execute the transcription with fallback
     const result = await serviceRegistry.executeWithFallback(
-      'transcribeAudio',
-      [audioFilePath, transcriptionOptions],
-      {
-        timeout: 300000, // 5 minutes timeout
-        retryAttempts: 1
-      }
+      'transcribe', // The method name on the service class
+      [audioFilePath, transcriptionOptions]
     );
-    
-    // Send completion event
-    mainWindow.webContents.send('transcription-complete', {
-      ...result.data,
-      serviceUsed: result.serviceUsed,
-      fallbackUsed: result.fallbackUsed
-    });
-    
-    return { success: true, result: result.data };
+
+    // Send completion or error events to the renderer
+    if (result.success) {
+      mainWindow?.webContents.send('transcription-complete', {
+        ...result,
+        serviceUsed: result.serviceUsed,
+        fallbackUsed: result.fallbackUsed,
+      });
+    } else {
+       mainWindow?.webContents.send('transcription-error', {
+        type: result.error?.type || 'TRANSCRIPTION_ERROR',
+        message: result.error?.message || 'An unknown error occurred.',
+        userMessage: result.error?.userMessage || 'Transcription failed.',
+        serviceUsed: result.serviceUsed,
+      });
+    }
+
+    return result;
+
   } catch (error) {
-    console.error('Transcription error:', error);
+    console.error('Transcription error in IPC handler:', error);
     
-    // Send error event
-    mainWindow.webContents.send('transcription-error', {
-      type: error.type || 'TRANSCRIPTION_ERROR',
+    // Send a generic error event to the renderer
+    mainWindow?.webContents.send('transcription-error', {
+      type: error.type || 'IPC_HANDLER_ERROR',
       message: error.message,
-      userMessage: error.userMessage || error.message
+      userMessage: error.userMessage || 'An unexpected error occurred during transcription.',
     });
     
     return { 
       success: false, 
       error: {
-        type: error.type || 'TRANSCRIPTION_ERROR',
+        type: error.type || 'IPC_HANDLER_ERROR',
         message: error.message,
-        userMessage: error.userMessage || error.message
+        userMessage: error.userMessage || error.message,
       }
     };
   } finally {
-    // Clean up temporary file if it was created
+    // Clean up the temporary file if it was created
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       try {
         fs.unlinkSync(tempFilePath);

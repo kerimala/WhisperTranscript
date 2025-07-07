@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 const EventEmitter = require('events');
 
 /**
@@ -300,21 +301,43 @@ class WhisperLocalClient extends EventEmitter {
    * @private
    */
   async _testDaemonConnection() {
-    try {
-      const response = await fetch(`http://localhost:8765/health`, {
+    return new Promise((resolve) => {
+      const req = http.request({
+        hostname: 'localhost',
+        port: 8765,
+        path: '/health',
         method: 'GET',
         timeout: 5000
+      }, (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          try {
+            if (res.statusCode === 200) {
+              const result = JSON.parse(data);
+              resolve(result);
+            } else {
+              resolve({ success: false, error: `HTTP ${res.statusCode}` });
+            }
+          } catch (error) {
+            resolve({ success: false, error: `Parse error: ${error.message}` });
+          }
+        });
       });
       
-      if (response.ok) {
-        const result = await response.json();
-        return result;
-      } else {
-        return { success: false, error: `HTTP ${response.status}` };
-      }
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
+      req.on('error', (error) => {
+        resolve({ success: false, error: error.message });
+      });
+      
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({ success: false, error: 'Request timeout' });
+      });
+      
+      req.end();
+    });
   }
 
   /**
@@ -322,35 +345,67 @@ class WhisperLocalClient extends EventEmitter {
    * @private
    */
   async _sendDaemonRequest(command, data = {}) {
-    try {
+    return new Promise((resolve) => {
       const requestData = {
         command,
         ...data
       };
-
-      const response = await fetch(`http://localhost:8765/`, {
+      
+      const postData = JSON.stringify(requestData);
+      
+      const req = http.request({
+        hostname: 'localhost',
+        port: 8765,
+        path: '/',
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
         },
-        body: JSON.stringify(requestData),
         timeout: 30000
+      }, (res) => {
+        let responseData = '';
+        res.on('data', (chunk) => {
+          responseData += chunk;
+        });
+        res.on('end', () => {
+          try {
+            if (res.statusCode === 200) {
+              const result = JSON.parse(responseData);
+              resolve(result);
+            } else {
+              resolve({
+                success: false,
+                error: `HTTP ${res.statusCode}: ${res.statusMessage}`
+              });
+            }
+          } catch (error) {
+            resolve({
+              success: false,
+              error: `Parse error: ${error.message}`
+            });
+          }
+        });
       });
-
-      if (response.ok) {
-        return await response.json();
-      } else {
-        return {
+      
+      req.on('error', (error) => {
+        resolve({
           success: false,
-          error: `HTTP ${response.status}: ${response.statusText}`
-        };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: `Request failed: ${error.message}`
-      };
-    }
+          error: `Request failed: ${error.message}`
+        });
+      });
+      
+      req.on('timeout', () => {
+        req.destroy();
+        resolve({
+          success: false,
+          error: 'Request timeout'
+        });
+      });
+      
+      req.write(postData);
+      req.end();
+    });
   }
 
   /**
@@ -410,9 +465,70 @@ class WhisperLocalClient extends EventEmitter {
   }
 
   /**
+   * Health check method required by ServiceRegistry
+   * @returns {Promise<boolean>} True if service is healthy, false otherwise
+   */
+  async isHealthy() {
+    try {
+      // If service is not running, it's not healthy
+      if (!this.isServiceRunning || !this.isServiceReady) {
+        return false;
+      }
+
+      // If service is starting, consider it temporarily healthy
+      if (this.isStarting) {
+        return true;
+      }
+
+      // Perform actual health check by testing daemon connection
+      const healthCheck = await this._testDaemonConnection();
+      this.lastHealthCheck = Date.now();
+      return healthCheck.success || false;
+    } catch (error) {
+      console.warn('[WhisperLocal] Health check failed:', error.message);
+      this.lastHealthCheck = Date.now();
+      return false;
+    }
+  }
+
+  /**
    * Test if the Python service is available and working
    * @returns {Promise<boolean>} True if service is ready
    */
+  async transcribe(audioFilePath, options = {}) {
+    if (!this.isServiceRunning || !this.isServiceReady) {
+      return { success: false, error: 'Local service is not running or not ready.' };
+    }
+
+    if (!fs.existsSync(audioFilePath)) {
+      return { success: false, error: `Audio file not found: ${audioFilePath}` };
+    }
+
+    const fileExtension = path.extname(audioFilePath).toLowerCase();
+    if (!this.supportedFormats.includes(fileExtension)) {
+      return { success: false, error: `Unsupported audio format: ${fileExtension}` };
+    }
+
+    try {
+      console.log(`[WhisperLocal] Transcribing file: ${path.basename(audioFilePath)}`);
+      
+      const { onProgress, ...restOptions } = options;
+      const result = await this._sendDaemonRequest('transcribe', {
+        file_path: audioFilePath,
+        ...restOptions
+      });
+
+      if (result.success) {
+        return { success: true, transcription: result.transcription };
+      } else {
+        return { success: false, error: result.error || 'Unknown error during local transcription' };
+      }
+    } catch (error) {
+      console.error('[WhisperLocal] Transcription failed:', error.message);
+      return { success: false, error: `Transcription failed: ${error.message}` };
+    }
+  }
+
   async testService() {
     try {
       console.log('[WhisperLocal] Testing Python service availability...');

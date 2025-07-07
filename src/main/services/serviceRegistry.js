@@ -382,6 +382,79 @@ class ServiceRegistry extends EventEmitter {
       config: service.config
     };
   }
+
+  /**
+   * Get available services list
+   * @returns {Array<string>} Array of service names
+   */
+  getAvailableServices() {
+    return Array.from(this.services.keys());
+  }
+
+  /**
+   * Get health status for all services
+   * @returns {Object} Health status object with service names as keys
+   */
+  getHealthStatus() {
+    const healthStatus = {};
+    
+    for (const [serviceName, service] of this.services) {
+      const state = this.serviceStates.get(serviceName);
+      
+      healthStatus[serviceName] = {
+        isHealthy: service.isHealthy || false,
+        status: state?.status || 'unknown',
+        lastCheck: service.lastHealthCheck,
+        lastError: state?.lastError || null,
+        isStarting: service.instance.isStarting || false
+      };
+    }
+    
+    return healthStatus;
+  }
+
+  /**
+   * Get fallback service name
+   * @returns {string|null} Name of fallback service or null
+   */
+  getFallbackService() {
+    return this.fallbackService;
+  }
+
+  async executeWithFallback(command, ...args) {
+    if (!this.currentService) {
+      throw new Error('No service is currently active');
+    }
+
+    const primaryService = this.services.get(this.currentService);
+    if (!primaryService) {
+      throw new Error(`Current service '${this.currentService}' not found`);
+    }
+
+    try {
+      if (typeof primaryService.instance[command] !== 'function') {
+        throw new Error(`Command '${command}' not found on service '${this.currentService}'`);
+      }
+      return await primaryService.instance[command](...args);
+    } catch (error) {
+      console.warn(`[ServiceRegistry] Primary service command '${command}' failed:`, error.message);
+
+      if (this.fallbackService && this.fallbackService !== this.currentService) {
+        const fallback = this.services.get(this.fallbackService);
+        if (fallback && typeof fallback.instance[command] === 'function') {
+          console.log(`[ServiceRegistry] Attempting fallback to '${this.fallbackService}' for command '${command}'`);
+          try {
+            return await fallback.instance[command](...args);
+          } catch (fallbackError) {
+            console.error(`[ServiceRegistry] Fallback service command '${command}' also failed:`, fallbackError.message);
+            throw fallbackError; // Re-throw fallback error
+          }
+        }
+      }
+      
+      throw error; // Re-throw original error if no fallback
+    }
+  }
   
   /**
    * Cleanup resources

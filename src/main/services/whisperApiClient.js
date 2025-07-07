@@ -79,7 +79,7 @@ class WhisperApiClient {
    * @param {Function} options.onProgress - Progress callback function
    * @returns {Promise<Object>} - Transcription result
    */
-  async transcribeAudio(audioFilePath, options = {}) {
+  async transcribe(audioFilePath, options = {}) {
     if (!this.apiKey) {
       throw new Error('API key is required. Please set your OpenAI API key.');
     }
@@ -94,7 +94,8 @@ class WhisperApiClient {
       prompt,
       response_format = 'json',
       temperature = 0,
-      onProgress
+      onProgress,
+      ...restOptions
     } = options;
     
     try {
@@ -148,11 +149,13 @@ class WhisperApiClient {
       );
       
       console.log('[WhisperAPI] Transcription completed successfully');
-      return this._processTranscriptionResponse(response.data, response_format);
+      const transcription = this._processTranscriptionResponse(response.data, response_format);
+      return { success: true, transcription };
       
     } catch (error) {
-      console.error('[WhisperAPI] Transcription failed:', error.message);
-      throw this._createTranscriptionError(error);
+      const detailedError = this._createTranscriptionError(error);
+      console.error('[WhisperAPI] Transcription failed:', detailedError.message);
+      return { success: false, error: detailedError.message, details: detailedError };
     }
   }
   
@@ -344,6 +347,25 @@ class WhisperApiClient {
       return true;
     } catch (error) {
       console.error('[WhisperAPI] Connection test failed:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Health check method required by ServiceRegistry
+   * @returns {Promise<boolean>} True if service is healthy, false otherwise
+   */
+  async isHealthy() {
+    try {
+      // If no API key is set, service is not healthy
+      if (!this.apiKey) {
+        return false;
+      }
+
+      // Test connection to OpenAI API
+      return await this.testConnection();
+    } catch (error) {
+      console.warn('[WhisperAPI] Health check failed:', error.message);
       return false;
     }
   }

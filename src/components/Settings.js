@@ -104,15 +104,20 @@ const Settings = ({ isOpen, onClose }) => {
     
     setIsCheckingLocalService(true);
     try {
-      const status = await window.electronAPI.whisper.local.getStatus();
-      setLocalServiceStatus(status.isRunning ? 'running' : 'stopped');
+      const response = await window.electronAPI.whisper.local.getStatus();
       
-      if (status.isRunning) {
-        // Get available models if service is running
-        const models = await window.electronAPI.whisper.local.getAvailableModels();
-        if (models.success) {
-          setAvailableModels(models.models || []);
+      if (response.success) {
+        setLocalServiceStatus(response.status);
+        
+        if (response.status === 'running') {
+          // Get available models if service is running
+          const models = await window.electronAPI.whisper.local.getAvailableModels();
+          if (models.success) {
+            setAvailableModels(models.models || []);
+          }
         }
+      } else {
+        setLocalServiceStatus('error');
       }
     } catch (error) {
       console.error('Error checking local service status:', error);
@@ -360,6 +365,7 @@ const Settings = ({ isOpen, onClose }) => {
                   <span className="status-label">Service Status:</span>
                   <span className={`status-badge ${localServiceStatus}`}>
                     {localServiceStatus === 'running' && '🟢 Running'}
+                    {localServiceStatus === 'starting' && '🟡 Starting'}
                     {localServiceStatus === 'stopped' && '🔴 Stopped'}
                     {localServiceStatus === 'error' && '⚠️ Error'}
                     {localServiceStatus === 'unknown' && '❓ Unknown'}
@@ -367,13 +373,22 @@ const Settings = ({ isOpen, onClose }) => {
                 </div>
                 
                 <div className="service-actions">
-                  {localServiceStatus === 'stopped' && (
+                  {(localServiceStatus === 'stopped' || localServiceStatus === 'error') && (
                     <button
                       className="btn-primary"
                       onClick={handleStartLocalService}
-                      disabled={isCheckingLocalService}
+                      disabled={isCheckingLocalService || localServiceStatus === 'starting'}
                     >
                       {isCheckingLocalService ? 'Starting...' : 'Start Service'}
+                    </button>
+                  )}
+                  
+                  {localServiceStatus === 'starting' && (
+                    <button
+                      className="btn-primary"
+                      disabled={true}
+                    >
+                      Starting...
                     </button>
                   )}
                   
