@@ -521,7 +521,7 @@ ipcMain.handle('whisper-transcribe-audio', async (event, audioInput, options = {
     // Use the service registry to execute the transcription with fallback
     const result = await serviceRegistry.executeWithFallback(
       'transcribe', // The method name on the service class
-      [audioFilePath, transcriptionOptions]
+      audioFilePath, transcriptionOptions
     );
 
     // Send completion or error events to the renderer

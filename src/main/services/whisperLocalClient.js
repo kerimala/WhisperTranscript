@@ -514,7 +514,7 @@ class WhisperLocalClient extends EventEmitter {
       
       const { onProgress, ...restOptions } = options;
       const result = await this._sendDaemonRequest('transcribe', {
-        file_path: audioFilePath,
+        audio_path: audioFilePath,
         ...restOptions
       });
 
@@ -596,7 +596,7 @@ class WhisperLocalClient extends EventEmitter {
       let result;
       if (this.isServiceRunning) {
         // Use HTTP communication for daemon mode
-        result = await this._sendDaemonRequest('change_model', { model: modelName });
+        result = await this._sendDaemonRequest('change_model', { model_name: modelName });
         if (!result.success) {
           // Rollback on failure
           this.currentModel = oldModel;

@@ -30,7 +30,7 @@ function App() {
       });
 
       const removeCompleteListener = window.electronAPI.onTranscriptionComplete((event, result) => {
-        setTranscription(result.text);
+        setTranscription(result.transcription?.text || result.text);
         setIsTranscribing(false);
         setTranscriptionProgress(0);
         setError(null);
