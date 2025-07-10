@@ -18,6 +18,47 @@ let modelManager;
 let serviceRegistry;
 let currentMode = 'cloud'; // 'cloud' or 'local'
 
+// Function to initialize global hotkey from saved settings
+function initializeGlobalHotkey() {
+  try {
+    // Get the config directory path
+    const configDir = path.join(os.homedir(), '.whispertranscript');
+    const configPath = path.join(configDir, 'config.json');
+    
+    let savedHotkey = 'CommandOrControl+Shift+D'; // Default fallback
+    
+    // Try to read saved hotkey from config file
+    if (fs.existsSync(configPath)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (config.globalHotkey) {
+          savedHotkey = config.globalHotkey;
+        }
+      } catch (error) {
+        console.warn('Failed to read hotkey from config file:', error);
+      }
+    }
+    
+    // Register the hotkey
+    const ret = globalShortcut.register(savedHotkey, () => {
+      console.log(`Global shortcut ${savedHotkey} pressed`);
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        mainWindow.webContents.send('global-shortcut-triggered', 'dictation-toggle');
+      }
+    });
+    
+    if (!ret) {
+      console.log(`Global shortcut registration failed for: ${savedHotkey}`);
+    } else {
+      console.log(`Global shortcut registered successfully: ${savedHotkey}`);
+    }
+  } catch (error) {
+    console.error('Error initializing global hotkey:', error);
+  }
+}
+
 function createWindow() {
   // Create the browser window
   mainWindow = new BrowserWindow({
@@ -216,23 +257,8 @@ ipcMain.handle('whisper-local-get-status', async () => {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
 
-    // Register a global shortcut
-    const ret = globalShortcut.register('CommandOrControl+Shift+D', () => {
-      console.log('Global shortcut CommandOrControl+Shift+D pressed');
-      // Bring the window to the front and focus it
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
-        // Optionally, send an event to the renderer process
-        mainWindow.webContents.send('global-shortcut-triggered', 'dictation-toggle');
-      }
-    });
-
-    if (!ret) {
-      console.log('Global shortcut registration failed');
-    } else {
-      console.log('Global shortcut registered successfully');
-    }
+    // Initialize hotkey from saved settings
+    initializeGlobalHotkey();
   });
 
   // Handle window closed
@@ -246,6 +272,28 @@ ipcMain.handle('whisper-local-get-status', async () => {
     return { action: 'deny' };
   });
 }
+
+// IPC handler for getting the saved global hotkey
+ipcMain.handle('get-global-hotkey', () => {
+  try {
+    const configDir = path.join(os.homedir(), '.whispertranscript');
+    const configPath = path.join(configDir, 'config.json');
+    
+    if (fs.existsSync(configPath)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        return config.globalHotkey || 'CommandOrControl+Shift+D';
+      } catch (error) {
+        console.warn('Failed to read hotkey from config file:', error);
+      }
+    }
+    
+    return 'CommandOrControl+Shift+D'; // Default fallback
+  } catch (error) {
+    console.error('Error getting global hotkey:', error);
+    return 'CommandOrControl+Shift+D';
+  }
+});
 
 // IPC handler for registering a custom shortcut
 ipcMain.handle('register-shortcut', (event, shortcut) => {
@@ -268,6 +316,37 @@ ipcMain.handle('register-shortcut', (event, shortcut) => {
     if (!ret) {
       console.log(`Registration of shortcut ${shortcut} failed`);
       return false;
+    }
+
+    // Save the hotkey to config file
+    try {
+      const configDir = path.join(os.homedir(), '.whispertranscript');
+      const configPath = path.join(configDir, 'config.json');
+      
+      // Ensure config directory exists
+      if (!fs.existsSync(configDir)) {
+        fs.mkdirSync(configDir, { recursive: true });
+      }
+      
+      // Read existing config or create new one
+      let config = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        } catch (error) {
+          console.warn('Failed to read existing config, creating new one:', error);
+        }
+      }
+      
+      // Update hotkey in config
+      config.globalHotkey = shortcut;
+      
+      // Write config back to file
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      console.log(`Hotkey ${shortcut} saved to config file`);
+    } catch (error) {
+      console.error('Failed to save hotkey to config file:', error);
+      // Don't fail the registration if we can't save to file
     }
 
     console.log(`Shortcut ${shortcut} registered successfully`);

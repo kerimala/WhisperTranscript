@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App info
   getVersion: () => ipcRenderer.invoke('app-version'),
   registerShortcut: (shortcut) => ipcRenderer.invoke('register-shortcut', shortcut),
+  getGlobalHotkey: () => ipcRenderer.invoke('get-global-hotkey'),
   
   // Dialog methods
   showMessageBox: (options) => ipcRenderer.invoke('show-message-box', options),

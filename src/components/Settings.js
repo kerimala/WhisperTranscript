@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './Settings.css';
 import ModelDownloadManager from './ModelDownloadManager';
 
@@ -17,38 +17,65 @@ const Settings = ({ isOpen, onClose }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [hotkeyStatus, setHotkeyStatus] = useState('');
 
+  const handleKeyDown = useCallback((e) => {
+    e.preventDefault();
+    
+    const modifierKeys = ['Control', 'Alt', 'Shift', 'Meta', 'Command'];
+    if (modifierKeys.includes(e.key)) {
+      return;
+    }
+    
+    const modifiers = [];
+    if (e.ctrlKey || e.metaKey) {
+      modifiers.push('CommandOrControl');
+    }
+    if (e.altKey) modifiers.push('Alt');
+    if (e.shiftKey) modifiers.push('Shift');
+    
+    let keyName = e.key;
+    
+    const keyMap = {
+      ' ': 'Space',
+      'ArrowUp': 'Up',
+      'ArrowDown': 'Down',
+      'ArrowLeft': 'Left',
+      'ArrowRight': 'Right',
+      'Escape': 'Esc'
+    };
+    
+    if (keyMap[keyName]) {
+      keyName = keyMap[keyName];
+    } else if (keyName.length === 1) {
+      keyName = keyName.toUpperCase();
+    }
+
+    // Prevent setting just modifiers
+    if (modifiers.length > 0 && modifierKeys.includes(keyName)) {
+        return;
+    }
+
+    const newHotkey = [...modifiers, keyName].join('+');
+    setHotkey(newHotkey);
+    setIsRecording(false);
+  }, [setHotkey, setIsRecording]);
+
   useEffect(() => {
     let statusInterval;
     if (isOpen) {
       checkCurrentApiKey();
       loadSettings();
       checkLocalServiceStatus();
-
-      // Poll for service status every 5 seconds
       statusInterval = setInterval(checkLocalServiceStatus, 5000);
     }
 
-    const handleKeyDown = (e) => {
-      if (!isRecording) return;
-      e.preventDefault();
-      const key = e.key.toUpperCase();
-      const modifiers = [];
-      if (e.ctrlKey) modifiers.push('Control');
-      if (e.altKey) modifiers.push('Alt');
-      if (e.shiftKey) modifiers.push('Shift');
-      if (e.metaKey) modifiers.push('Command');
-
-      // For single keys like 'F5', 'Enter', etc.
-      const specialKeys = ['Control', 'Alt', 'Shift', 'Command', 'Meta'];
-      if (specialKeys.includes(e.key)) {
-        return; // Don't set just a modifier as the hotkey
+    return () => {
+      if (statusInterval) {
+        clearInterval(statusInterval);
       }
-
-      const newHotkey = [...modifiers, key].join('+');
-      setHotkey(newHotkey);
-      setIsRecording(false);
     };
+  }, [isOpen]);
 
+  useEffect(() => {
     if (isRecording) {
       window.addEventListener('keydown', handleKeyDown);
     } else {
@@ -57,11 +84,8 @@ const Settings = ({ isOpen, onClose }) => {
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      if (statusInterval) {
-        clearInterval(statusInterval);
-      }
     };
-  }, [isOpen, isRecording]);
+  }, [isRecording, handleKeyDown]);
 
   const loadSettings = async () => {
     try {
@@ -73,10 +97,12 @@ const Settings = ({ isOpen, onClose }) => {
       const savedModel = localStorage.getItem('selectedModel') || 'base';
       setSelectedModel(savedModel);
 
-      const savedHotkey = localStorage.getItem('globalHotkey') || 'CommandOrControl+Shift+D';
-      setHotkey(savedHotkey);
+      // Try to get hotkey from the main process config
+      const savedHotkey = await window.electronAPI.getGlobalHotkey();
+      setHotkey(savedHotkey || 'CommandOrControl+Shift+D');
     } catch (error) {
-      console.error('Error loading settings:', error);
+      console.warn('Failed to load hotkey from config, using default:', error);
+      setHotkey('CommandOrControl+Shift+D');
     }
   };
 
@@ -88,7 +114,6 @@ const Settings = ({ isOpen, onClose }) => {
     try {
       const success = await window.electronAPI.registerShortcut(hotkey);
       if (success) {
-        localStorage.setItem('globalHotkey', hotkey);
         setHotkeyStatus(`Hotkey '${hotkey}' saved successfully!`);
       } else {
         setHotkeyStatus(`Failed to register '${hotkey}'. It might be in use.`);

@@ -315,7 +315,7 @@
         "dependencies": [
           1
         ],
-        "status": "done",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
@@ -323,7 +323,7 @@
             "description": "Implement hotkey registration functionality using Electron's globalShortcut API to register and manage keyboard shortcuts for the application",
             "dependencies": [],
             "details": "Set up global hotkey registration system that can capture keyboard combinations and bind them to application functions. This includes handling registration, unregistration, and conflict detection for hotkeys.",
-            "status": "done",
+            "status": "in-progress",
             "testStrategy": ""
           },
           {
@@ -334,7 +334,7 @@
               1
             ],
             "details": "Develop the interface and logic for users to customize their hotkey preferences, including validation of key combinations, saving user preferences, and applying changes to the registered hotkeys.",
-            "status": "done",
+            "status": "in-progress",
             "testStrategy": ""
           }
         ]
@@ -349,7 +349,7 @@
         "dependencies": [
           8
         ],
-        "status": "in-progress",
+        "status": "pending",
         "subtasks": [
           {
             "id": 1,
@@ -434,7 +434,7 @@
     ],
     "metadata": {
       "created": "2025-07-02T00:25:27.046Z",
-      "updated": "2025-07-02T22:31:45.597Z",
+      "updated": "2025-07-10T22:59:42.397Z",
       "description": "Tasks for master context"
     }
   }
