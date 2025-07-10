@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       checkService: () => ipcRenderer.invoke('whisper-local-check-service'),
       installDependencies: () => ipcRenderer.invoke('whisper-local-install-dependencies'),
       getModels: () => ipcRenderer.invoke('whisper-local-get-models'),
+      getAvailableModels: () => ipcRenderer.invoke('whisper-local-get-models'),
       changeModel: (modelName) => ipcRenderer.invoke('whisper-local-change-model', modelName),
       testService: () => ipcRenderer.invoke('whisper-local-test-service'),
       startService: () => ipcRenderer.invoke('whisper-local-start-service'),

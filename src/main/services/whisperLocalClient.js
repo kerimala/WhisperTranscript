@@ -114,7 +114,26 @@ class WhisperLocalClient extends EventEmitter {
       
     } catch (error) {
       console.error('[WhisperLocal] Failed to start service:', error.message);
+      
+      // Check if there's already a daemon running (port in use error)
+      if (error.message.includes('Address already in use') || error.message.includes('EADDRINUSE')) {
+        console.log('[WhisperLocal] Port already in use, checking for existing daemon...');
+        try {
+          const daemonTest = await this._testDaemonConnection();
+          if (daemonTest.success) {
+            console.log('[WhisperLocal] Found existing daemon, using it');
+            this.isServiceRunning = true;
+            this.isServiceReady = true;
+            this.emit('serviceStarted');
+            return true;
+          }
+        } catch (daemonError) {
+          console.error('[WhisperLocal] Failed to test existing daemon:', daemonError.message);
+        }
+      }
+      
       this.isServiceRunning = false;
+      this.isServiceReady = false;
       this.emit('serviceError', error);
       return false;
     } finally {
@@ -470,23 +489,34 @@ class WhisperLocalClient extends EventEmitter {
    */
   async isHealthy() {
     try {
-      // If service is not running, it's not healthy
-      if (!this.isServiceRunning || !this.isServiceReady) {
-        return false;
-      }
-
       // If service is starting, consider it temporarily healthy
       if (this.isStarting) {
         return true;
       }
 
-      // Perform actual health check by testing daemon connection
+      // Always perform actual health check by testing daemon connection
+      // This handles cases where the process might have exited but daemon is still running
       const healthCheck = await this._testDaemonConnection();
       this.lastHealthCheck = Date.now();
+      
+      // If daemon is responding, update our internal state
+      if (healthCheck.success) {
+        this.isServiceReady = true;
+        // If daemon is responding but we think the service isn't running,
+        // it means there's an existing daemon from a previous session
+        if (!this.isServiceRunning) {
+          console.log('[WhisperLocal] Found existing daemon, updating service state');
+          this.isServiceRunning = true;
+        }
+      } else {
+        this.isServiceReady = false;
+      }
+      
       return healthCheck.success || false;
     } catch (error) {
       console.warn('[WhisperLocal] Health check failed:', error.message);
       this.lastHealthCheck = Date.now();
+      this.isServiceReady = false;
       return false;
     }
   }

@@ -215,7 +215,7 @@ class WhisperLocalService:
                 if not self.load_model():
                     return {
                         "success": False,
-                        "error": "Failed to load model for testing"
+                        "error": f"Failed to load model for testing: {self.model_name}"
                     }
             
             return {

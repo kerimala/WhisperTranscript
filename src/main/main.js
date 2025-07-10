@@ -152,9 +152,25 @@ ipcMain.handle('whisper-local-restart-service', async () => {
 });
 
 ipcMain.handle('whisper-local-get-status', async () => {
+  if (!whisperLocalClient) {
+    // During startup, the client might not be initialized yet.
+    // Return a default 'stopped' status to avoid UI errors.
+    return {
+      success: true,
+      status: 'stopped',
+      isRunning: false,
+      isReady: false,
+      isStarting: false,
+      processId: null,
+      uptime: 0,
+      restartAttempts: 0,
+      lastHealthCheck: null,
+      currentModel: null,
+    };
+  }
   try {
     const statusObj = whisperLocalClient.getServiceStatus();
-    
+
     // Convert complex status object to simple status string for UI
     let status = 'unknown';
     if (statusObj.isStarting) {
@@ -162,13 +178,14 @@ ipcMain.handle('whisper-local-get-status', async () => {
     } else if (statusObj.isRunning && statusObj.isReady) {
       status = 'running';
     } else if (statusObj.isRunning && !statusObj.isReady) {
+      // If it's running but not ready, it's still in the process of starting up
       status = 'starting';
     } else {
       status = 'stopped';
     }
-    
-    return { 
-      success: true, 
+
+    return {
+      success: true,
       status,
       isRunning: statusObj.isRunning,
       isReady: statusObj.isReady,
@@ -177,32 +194,25 @@ ipcMain.handle('whisper-local-get-status', async () => {
       uptime: statusObj.uptime,
       restartAttempts: statusObj.restartAttempts,
       lastHealthCheck: statusObj.lastHealthCheck,
-      currentModel: statusObj.currentModel
+      currentModel: statusObj.currentModel,
     };
   } catch (error) {
     return { success: false, error: error.message, status: 'error' };
   }
 });
 
-  // Load the app
-  const startUrl = isDev 
-    ? 'http://localhost:3001' 
-    : `file://${path.join(__dirname, '../../build/index.html')}`;
-  
-  // In development, wait for the React dev server to be ready
+  // Load the index.html of the app.
   if (isDev) {
-    // Try to load the URL, and if it fails, retry after a delay
-    const loadDevUrl = () => {
-      mainWindow.loadURL(startUrl).catch(() => {
-        setTimeout(loadDevUrl, 1000);
-      });
-    };
-    loadDevUrl();
+    // In development, load the app from the local web server
+    mainWindow.loadURL('http://localhost:3001');
+    // Open the DevTools.
+    mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadURL(startUrl);
+    // In production, load the app from the local file system
+    mainWindow.loadFile(path.join(__dirname, '../../build/index.html'));
   }
 
-  // Show window when ready to prevent visual flash
+  // Show the window when it's ready
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
 
