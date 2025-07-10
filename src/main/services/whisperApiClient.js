@@ -238,8 +238,8 @@ class WhisperApiClient {
     } else if (error.request) {
       // Network error
       error.type = 'NETWORK_ERROR';
-      error.userMessage = 'Network error. Please check your internet connection.';
-      console.error('[WhisperAPI] Network error:', error.message);
+      error.userMessage = `Network error: ${error.message}. Please check your internet connection and ensure the local server is running.`;
+      console.error(`[WhisperAPI] Network error: ${error.message}`, error.stack);
     } else {
       // Other error
       error.type = 'UNKNOWN_ERROR';
