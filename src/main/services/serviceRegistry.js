@@ -47,8 +47,29 @@ class ServiceRegistry extends EventEmitter {
     this.serviceStates.set(name, {
       status: 'unknown',
       lastError: null,
-      lastSuccess: null
+      lastSuccess: null,
+      dependencyFailure: null
     });
+    
+    // Listen for dependency failure events from services
+    if (service && typeof service.on === 'function') {
+      service.on('dependencyFailure', (failureInfo) => {
+        console.warn(`[ServiceRegistry] Dependency failure in service '${name}':`, failureInfo.reason?.message);
+        
+        const state = this.serviceStates.get(name);
+        if (state) {
+          state.status = 'dependency_error';
+          state.lastError = failureInfo.reason?.message || 'Dependency failure';
+          state.dependencyFailure = failureInfo.reason;
+        }
+        
+        this.emit('dependencyFailure', { 
+          service: name, 
+          failure: failureInfo,
+          timestamp: new Date().toISOString()
+        });
+      });
+    }
     
     console.log(`[ServiceRegistry] Registered service: ${name}`);
     this.emit('serviceRegistered', { name, config });
@@ -78,9 +99,76 @@ class ServiceRegistry extends EventEmitter {
       
       // Check service health before switching (unless forced)
       if (!force) {
-        const isHealthy = await this.checkServiceHealth(serviceName);
+        let isHealthy = await this.checkServiceHealth(serviceName);
         if (!isHealthy) {
-          throw new Error(`Service '${serviceName}' is not healthy`);
+          // Try to start the service if it's not healthy and has a startService method
+          const serviceInstance = targetService.instance;
+          if (serviceInstance && typeof serviceInstance.startService === 'function') {
+            console.log(`[ServiceRegistry] Service '${serviceName}' is not healthy, attempting to start it...`);
+            try {
+              const startResult = await serviceInstance.startService();
+              if (startResult) {
+                // Give the service a moment to become ready, then check health again
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                isHealthy = await this.checkServiceHealth(serviceName);
+                if (isHealthy) {
+                  console.log(`[ServiceRegistry] Successfully started and verified service '${serviceName}'`);
+                } else {
+                  console.warn(`[ServiceRegistry] Service '${serviceName}' started but still not healthy`);
+                }
+              } else {
+                console.warn(`[ServiceRegistry] Failed to start service '${serviceName}'`);
+              }
+            } catch (startError) {
+              console.warn(`[ServiceRegistry] Error starting service '${serviceName}':`, startError.message);
+            }
+          }
+          
+          // If still not healthy after start attempt, check for dependency failures
+          if (!isHealthy) {
+            const serviceInstance = targetService.instance;
+            const serviceState = this.serviceStates.get(serviceName);
+            let errorMessage = `Service '${serviceName}' is not available`;
+            
+            // Check if we have dependency failure information
+            if (serviceState?.dependencyFailure) {
+              const failure = serviceState.dependencyFailure;
+              errorMessage = `${failure.message}. Solution: ${failure.solution}`;
+            } else if (serviceName === 'local' && serviceInstance) {
+              // Fallback to checking prerequisites if no dependency failure info available
+              if (typeof serviceInstance.checkPrerequisites === 'function') {
+                try {
+                  const prereqResult = await serviceInstance.checkPrerequisites();
+                  if (!prereqResult.success) {
+                    const missing = prereqResult.missing || [];
+                    const details = prereqResult.details || {};
+                    
+                    if (missing.includes('python')) {
+                      errorMessage = `Python 3.7+ is required but not found. ${details.python?.suggestion || 'Please install Python first.'}`;
+                    } else if (missing.includes('whisper')) {
+                      errorMessage = `OpenAI Whisper package is missing. ${details.whisper?.suggestion || 'Please run: pip install openai-whisper'}`;
+                    } else if (missing.includes('service_file')) {
+                      errorMessage = `Local transcription service files are missing. Please reinstall the application.`;
+                    } else if (missing.length > 0) {
+                      const suggestions = missing.map(item => {
+                        const detail = details[item];
+                        return detail?.suggestion || `${item} is required`;
+                      }).join('; ');
+                      errorMessage = `Missing dependencies: ${missing.join(', ')}. ${suggestions}`;
+                    } else {
+                      errorMessage = `Local transcription service prerequisites check failed.`;
+                    }
+                  }
+                } catch (prereqError) {
+                  errorMessage = `Local transcription service prerequisites check failed: ${prereqError.message}`;
+                }
+              } else {
+                errorMessage = `Local transcription service failed to start. Please ensure Python and required dependencies are installed.`;
+              }
+            }
+            
+            throw new Error(errorMessage);
+          }
         }
       }
       
@@ -208,17 +296,24 @@ class ServiceRegistry extends EventEmitter {
   /**
    * Check health of a specific service
    * @param {string} serviceName - Name of the service to check
+   * @param {number} retryCount - Internal retry counter to prevent infinite recursion
+   * @param {number} maxRetries - Maximum number of retries for starting services
    */
-  async checkServiceHealth(serviceName) {
+  async checkServiceHealth(serviceName, retryCount = 0, maxRetries = 5) {
     const service = this.services.get(serviceName);
     if (!service || !service.config.healthCheck) {
       return true; // No health check needed
     }
 
-    // If the service is starting, wait for it to be ready
+    // If the service is starting, wait for it to be ready with retry limit
     if (service.instance.isStarting) {
+      if (retryCount >= maxRetries) {
+        console.warn(`[ServiceRegistry] Service ${serviceName} has been starting for too long (${maxRetries} retries), considering it unhealthy`);
+        return false;
+      }
+      
       await new Promise(resolve => setTimeout(resolve, 1000)); // Wait and re-check
-      return this.checkServiceHealth(serviceName);
+      return this.checkServiceHealth(serviceName, retryCount + 1, maxRetries);
     }
     
     try {
@@ -379,6 +474,7 @@ class ServiceRegistry extends EventEmitter {
       status: state.status,
       lastError: state.lastError,
       lastSuccess: state.lastSuccess,
+      dependencyFailure: state.dependencyFailure,
       config: service.config
     };
   }
@@ -406,6 +502,7 @@ class ServiceRegistry extends EventEmitter {
         status: state?.status || 'unknown',
         lastCheck: service.lastHealthCheck,
         lastError: state?.lastError || null,
+        dependencyFailure: state?.dependencyFailure || null,
         isStarting: service.instance.isStarting || false
       };
     }
@@ -422,6 +519,8 @@ class ServiceRegistry extends EventEmitter {
   }
 
   async executeWithFallback(command, ...args) {
+    console.log(`[ServiceRegistry] executeWithFallback called with command: ${command}, currentService: ${this.currentService}`);
+    
     if (!this.currentService) {
       throw new Error('No service is currently active');
     }
@@ -435,9 +534,16 @@ class ServiceRegistry extends EventEmitter {
       if (typeof primaryService.instance[command] !== 'function') {
         throw new Error(`Command '${command}' not found on service '${this.currentService}'`);
       }
+      console.log(`[ServiceRegistry] Executing ${command} on ${this.currentService} service`);
       return await primaryService.instance[command](...args);
     } catch (error) {
       console.warn(`[ServiceRegistry] Primary service command '${command}' failed:`, error.message);
+
+      // Do not fallback to cloud service if local service fails
+      if (this.currentService === 'local') {
+        console.error(`[ServiceRegistry] Local service command '${command}' failed. No fallback.`, error);
+        throw new Error('Local transcription service failed. Please check if the local model is running correctly.');
+      }
 
       if (this.fallbackService && this.fallbackService !== this.currentService) {
         const fallback = this.services.get(this.fallbackService);

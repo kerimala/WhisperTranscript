@@ -67,10 +67,13 @@ function App() {
     setError(null);
 
     try {
-      // Check if API key is configured
-      const apiKeyStatus = await window.electronAPI.whisper.checkApiKeyStatus();
-      if (!apiKeyStatus.configured || !apiKeyStatus.valid) {
-        throw new Error('OpenAI API key is not configured or invalid. Please set your API key in the settings.');
+      const currentMode = await window.electronAPI.whisper.getMode();
+
+      if (currentMode === 'cloud') {
+        const apiKeyStatus = await window.electronAPI.whisper.checkApiKeyStatus();
+        if (!apiKeyStatus.configured || !apiKeyStatus.valid) {
+          throw new Error('OpenAI API key is not configured or invalid. Please set your API key in the settings.');
+        }
       }
 
       let audioInput;

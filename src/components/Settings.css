@@ -506,9 +506,531 @@
   }
 }
 
+/* Mode error message styles */
+.mode-error-message {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--color-error-surface, #fef2f2);
+  border: 1px solid var(--color-error-border, #fecaca);
+  border-radius: var(--radius-md);
+  color: var(--color-error-text, #dc2626);
+}
+
+.error-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.error-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.error-text {
+  flex: 1;
+}
+
+.error-title {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+.error-tips {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-error-text-secondary, #b91c1c);
+  background: var(--color-error-tips-bg, rgba(220, 38, 38, 0.05));
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  margin-top: 0.5rem;
+}
+
+.error-tips strong {
+  color: var(--color-error-text, #dc2626);
+}
+
 /* Dark mode adjustments */
 @media (prefers-color-scheme: dark) {
   .settings-overlay {
     background: rgba(0, 0, 0, 0.7);
+  }
+  
+  .mode-error-message {
+    background: var(--color-error-surface, rgba(220, 38, 38, 0.1));
+    border-color: var(--color-error-border, rgba(220, 38, 38, 0.2));
+    color: var(--color-error-text, #fca5a5);
+  }
+  
+  .error-tips {
+    background: rgba(220, 38, 38, 0.08);
+    color: var(--color-error-text-secondary, #f87171);
+  }
+  
+  .error-tips strong {
+    color: var(--color-error-text, #fca5a5);
+  }
+}
+
+/* Setup Wizard Styles */
+.setup-wizard-modal {
+  max-width: 700px;
+  width: 95%;
+  max-height: 90vh;
+}
+
+.setup-wizard-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Error Actions */
+.error-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.error-actions .btn-primary,
+.error-actions .btn-secondary {
+  min-width: 120px;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Setup Status Section */
+.setup-status-section {
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+
+.setup-status-section h3 {
+  margin: 0 0 1rem 0;
+  color: var(--color-text-primary);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.status-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+}
+
+.status-item.checking {
+  background: var(--color-info-bg, #eff6ff);
+  border-color: var(--color-info-border, #bfdbfe);
+}
+
+.status-item.ready {
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+}
+
+.status-item.needs-setup {
+  background: var(--color-warning-bg, #fef3c7);
+  border-color: var(--color-warning-border, #fbbf24);
+}
+
+.status-item.error {
+  background: var(--color-error-bg);
+  border-color: var(--color-error-border);
+}
+
+.status-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.status-text {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.status-details {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-top: 0.25rem;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+}
+
+/* Installation Progress Section */
+.installation-progress-section {
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+
+.installation-progress-section h4 {
+  margin: 0 0 1rem 0;
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-hover));
+  border-radius: var(--radius-sm);
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.progress-info {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.progress-stage {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  text-transform: capitalize;
+}
+
+.progress-message {
+  grid-column: 1 / -1;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.progress-percent {
+  font-weight: 600;
+  color: var(--color-primary);
+  font-size: 0.9rem;
+}
+
+/* Installation Result Section */
+.installation-result-section {
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+
+.installation-result-section h4 {
+  margin: 0 0 1rem 0;
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.result-success,
+.result-error {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  border: 2px solid;
+}
+
+.result-success {
+  background: var(--color-success-bg);
+  border-color: var(--color-success-border);
+}
+
+.result-error {
+  background: var(--color-error-bg);
+  border-color: var(--color-error-border);
+}
+
+.result-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.result-content {
+  flex: 1;
+}
+
+.result-title {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.result-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+}
+
+.result-error-msg {
+  color: var(--color-error);
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+}
+
+.result-suggestion {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.result-command {
+  margin-top: 0.75rem;
+}
+
+/* Setup Actions Section */
+.setup-actions-section {
+  background: var(--color-surface-secondary);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+
+.setup-actions-section h4 {
+  margin: 0 0 1.5rem 0;
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.setup-option {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.setup-option:last-child {
+  margin-bottom: 0;
+}
+
+.setup-option h5 {
+  margin: 0 0 0.5rem 0;
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.setup-option p {
+  margin: 0 0 1rem 0;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.setup-btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: 1px solid;
+  cursor: pointer;
+}
+
+.setup-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Python Environment Select */
+.python-env-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  margin-bottom: 1rem;
+}
+
+.python-env-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-bg);
+}
+
+/* Manual Setup */
+.manual-setup {
+  border-color: var(--color-border-secondary);
+  background: var(--color-surface-secondary);
+}
+
+.manual-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.command-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.command-step strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.command-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 0.85rem;
+}
+
+.command-box code {
+  flex: 1;
+  color: var(--color-text-primary);
+  background: none;
+  padding: 0;
+  border: none;
+  font-size: inherit;
+  word-break: break-all;
+}
+
+.copy-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.2s ease;
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.copy-btn:hover {
+  background: var(--color-surface-hover);
+}
+
+/* Setup Complete Section */
+.setup-complete-section {
+  background: var(--color-success-bg);
+  border: 2px solid var(--color-success-border);
+  border-radius: var(--radius-md);
+  padding: 2rem;
+  text-align: center;
+}
+
+.setup-complete-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.success-icon {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.setup-complete-message h4 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.setup-complete-message p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* Responsive adjustments for setup wizard */
+@media (max-width: 640px) {
+  .setup-wizard-modal {
+    width: 98%;
+    max-height: 95vh;
+  }
+  
+  .error-actions {
+    flex-direction: column;
+  }
+  
+  .error-actions .btn-primary,
+  .error-actions .btn-secondary {
+    width: 100%;
+  }
+  
+  .setup-option {
+    padding: 1rem;
+  }
+  
+  .command-box {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+  
+  .command-box code {
+    word-break: break-all;
+    text-align: center;
+  }
+  
+  .copy-btn {
+    align-self: flex-end;
   }
 }

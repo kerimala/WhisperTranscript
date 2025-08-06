@@ -42,7 +42,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       startService: () => ipcRenderer.invoke('whisper-local-start-service'),
       stopService: () => ipcRenderer.invoke('whisper-local-stop-service'),
       restartService: () => ipcRenderer.invoke('whisper-local-restart-service'),
-      getStatus: () => ipcRenderer.invoke('whisper-local-get-status')
+      getStatus: () => ipcRenderer.invoke('whisper-local-get-status'),
+      
+      // New automated dependency installation methods
+      autoInstallDependencies: (options) => ipcRenderer.invoke('whisper-local-auto-install-dependencies', options),
+      setupVirtualEnvironment: (pythonPath) => ipcRenderer.invoke('whisper-local-setup-virtual-environment', pythonPath),
+      findCondaEnvironments: () => ipcRenderer.invoke('whisper-local-find-conda-environments'),
+      findPythonEnvironments: () => ipcRenderer.invoke('whisper-local-find-python-environments'),
+      checkPrerequisites: () => ipcRenderer.invoke('whisper-local-check-prerequisites'),
+      getDiagnostics: () => ipcRenderer.invoke('whisper-local-get-diagnostics')
     },
     
     // Service registry management
@@ -112,6 +120,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onModelDeleted: (callback) => {
     ipcRenderer.on('model-deleted', callback);
     return () => ipcRenderer.removeListener('model-deleted', callback);
+  },
+  
+  // Dependency installation progress listener
+  onDependencyInstallationProgress: (callback) => {
+    ipcRenderer.on('dependency-installation-progress', callback);
+    return () => ipcRenderer.removeListener('dependency-installation-progress', callback);
+  },
+  
+  // Global shortcut listener
+  onGlobalShortcutTriggered: (callback) => {
+    ipcRenderer.on('global-shortcut-triggered', callback);
+    return () => ipcRenderer.removeListener('global-shortcut-triggered', callback);
   }
 });
 

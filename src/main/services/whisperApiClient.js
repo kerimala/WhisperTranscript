@@ -2,28 +2,40 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
+const { ERROR_TYPES, createStandardError, structuredLog, validateInput, safeFileOperation } = require('../utils/errorHandler');
 
 /**
  * Whisper Cloud API Client Service
  * Handles communication with OpenAI's Whisper API for audio transcription
  */
 class WhisperApiClient {
-  constructor(apiKey = null) {
+  constructor(apiKey = null, options = {}) {
     // Try to load API key from environment variable first
     this.apiKey = apiKey || process.env.OPENAI_API_KEY || null;
     this.baseURL = 'https://api.openai.com/v1';
-    this.maxRetries = 3;
-    this.retryDelay = 1000; // Base delay in milliseconds
+    this.maxRetries = options.maxRetries || 3;
+    this.retryDelay = options.retryDelay || 1000; // Base delay in milliseconds
+    
+    // Configurable timeouts for different operations
+    this.timeouts = {
+      default: options.defaultTimeout || 30000,    // 30 seconds for quick operations
+      transcription: options.transcriptionTimeout || 300000,  // 5 minutes for transcription
+      testConnection: options.testTimeout || 10000, // 10 seconds for connection tests
+      ...options.customTimeouts
+    };
     
     // Initialize axios instance with default configuration
     this.client = axios.create({
       baseURL: this.baseURL,
-      timeout: 300000, // 5 minutes timeout for large audio files
+      timeout: this.timeouts.default,
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
         'User-Agent': 'WhisperTranscript/1.0.0'
       }
     });
+    
+    // Active request tracking for cancellation
+    this.activeRequests = new Map();
     
     // Add request interceptor for logging
     this.client.interceptors.request.use(
@@ -59,12 +71,167 @@ class WhisperApiClient {
   }
   
   /**
-   * Validate API key format
+   * Create a cancelable request with timeout configuration
+   * @param {string} requestId - Unique identifier for this request
+   * @param {string} operation - Operation type for timeout selection
+   * @returns {object} AbortController and timeout value
+   */
+  createCancelableRequest(requestId, operation = 'default') {
+    // Clean up any existing request with the same ID
+    if (this.activeRequests.has(requestId)) {
+      this.cancelRequest(requestId);
+    }
+    
+    const controller = new AbortController();
+    const timeout = this.timeouts[operation] || this.timeouts.default;
+    
+    // Set up automatic timeout cancellation
+    const timeoutId = setTimeout(() => {
+      if (this.activeRequests.has(requestId)) {
+        structuredLog('warn', 'WhisperApiClient', `Request ${requestId} timed out after ${timeout}ms`);
+        controller.abort();
+        this.activeRequests.delete(requestId);
+      }
+    }, timeout);
+    
+    // Store request info
+    this.activeRequests.set(requestId, {
+      controller,
+      timeoutId,
+      operation,
+      timeout,
+      startTime: Date.now()
+    });
+    
+    return { controller, timeout };
+  }
+  
+  /**
+   * Cancel a specific request
+   * @param {string} requestId - Request ID to cancel
+   * @returns {boolean} True if request was canceled
+   */
+  cancelRequest(requestId) {
+    const requestInfo = this.activeRequests.get(requestId);
+    if (requestInfo) {
+      clearTimeout(requestInfo.timeoutId);
+      requestInfo.controller.abort();
+      this.activeRequests.delete(requestId);
+      
+      structuredLog('info', 'WhisperApiClient', `Canceled request ${requestId}`, {
+        operation: requestInfo.operation,
+        elapsed: Date.now() - requestInfo.startTime
+      });
+      
+      return true;
+    }
+    return false;
+  }
+  
+  /**
+   * Cancel all active requests
+   */
+  cancelAllRequests() {
+    const requestIds = Array.from(this.activeRequests.keys());
+    let canceledCount = 0;
+    
+    for (const requestId of requestIds) {
+      if (this.cancelRequest(requestId)) {
+        canceledCount++;
+      }
+    }
+    
+    structuredLog('info', 'WhisperApiClient', `Canceled ${canceledCount} active requests`);
+    return canceledCount;
+  }
+  
+  /**
+   * Clean up completed request
+   * @private
+   */
+  cleanupRequest(requestId) {
+    const requestInfo = this.activeRequests.get(requestId);
+    if (requestInfo) {
+      clearTimeout(requestInfo.timeoutId);
+      this.activeRequests.delete(requestId);
+    }
+  }
+  
+  /**
+   * Validate API key format with comprehensive checks
    * @param {string} apiKey - API key to validate
-   * @returns {boolean} - True if valid format
+   * @returns {object} - Validation result with details
+   * @throws {object} Standardized validation error for invalid format
    */
   validateApiKey(apiKey) {
-    return typeof apiKey === 'string' && apiKey.startsWith('sk-') && apiKey.length > 20;
+    try {
+      // Basic format validation
+      validateInput(
+        { apiKey },
+        {
+          apiKey: {
+            required: true,
+            type: 'string',
+            minLength: 20,
+            maxLength: 200, // Reasonable upper limit
+            pattern: /^sk-[A-Za-z0-9]+$/ // Must start with 'sk-' followed by alphanumeric
+          }
+        },
+        'API Key Validation'
+      );
+
+      // Additional OpenAI-specific validation
+      if (!apiKey.startsWith('sk-')) {
+        throw createStandardError(
+          ERROR_TYPES.VALIDATION_ERROR,
+          'API key must start with "sk-"',
+          'Invalid API key format. OpenAI API keys must start with "sk-"'
+        );
+      }
+
+      // Check for minimum length after prefix
+      const keyBody = apiKey.substring(3); // Remove 'sk-' prefix
+      if (keyBody.length < 20) {
+        throw createStandardError(
+          ERROR_TYPES.VALIDATION_ERROR,
+          'API key body too short after sk- prefix',
+          'API key appears to be incomplete or invalid'
+        );
+      }
+
+      // Check for suspicious patterns (all same character, obvious test keys, etc.)
+      if (/^(.)\1*$/.test(keyBody)) {
+        throw createStandardError(
+          ERROR_TYPES.VALIDATION_ERROR,
+          'API key appears to be a test key (repeated characters)',
+          'Please provide a valid OpenAI API key'
+        );
+      }
+
+      if (keyBody.toLowerCase().includes('test') || keyBody.toLowerCase().includes('fake')) {
+        throw createStandardError(
+          ERROR_TYPES.VALIDATION_ERROR,
+          'API key appears to be a test key',
+          'Please provide a valid OpenAI API key'
+        );
+      }
+
+      structuredLog('debug', 'WhisperApiClient', 'API key format validation passed');
+      return { valid: true, message: 'API key format is valid' };
+      
+    } catch (error) {
+      if (error.type) {
+        // Already a standard error, re-throw
+        throw error;
+      } else {
+        // Unexpected error, wrap it
+        throw createStandardError(
+          ERROR_TYPES.VALIDATION_ERROR,
+          `API key validation failed: ${error.message}`,
+          'Invalid API key format'
+        );
+      }
+    }
   }
   
   /**
@@ -81,11 +248,19 @@ class WhisperApiClient {
    */
   async transcribe(audioFilePath, options = {}) {
     if (!this.apiKey) {
-      throw new Error('API key is required. Please set your OpenAI API key.');
+      throw createStandardError(
+        ERROR_TYPES.API_ERROR,
+        'API key is required for transcription',
+        'API key is required. Please set your OpenAI API key.'
+      );
     }
     
     if (!fs.existsSync(audioFilePath)) {
-      throw new Error(`Audio file not found: ${audioFilePath}`);
+      throw createStandardError(
+        ERROR_TYPES.FILE_ERROR,
+        `Audio file not found: ${audioFilePath}`,
+        'Audio file not found. Please check the file path.'
+      );
     }
     
     const {
@@ -95,19 +270,36 @@ class WhisperApiClient {
       response_format = 'json',
       temperature = 0,
       onProgress,
+      requestId = `transcribe-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       ...restOptions
     } = options;
     
+    // Create cancelable request
+    const { controller, timeout } = this.createCancelableRequest(requestId, 'transcription');
+    
     try {
+      structuredLog('info', 'WhisperApiClient', `Starting transcription with request ID: ${requestId}`, {
+        timeout,
+        model,
+        responseFormat: response_format
+      });
+      
       // Validate file size (25MB limit for Whisper API)
       const stats = fs.statSync(audioFilePath);
       const fileSizeInMB = stats.size / (1024 * 1024);
       
       if (fileSizeInMB > 25) {
-        throw new Error(`File size (${fileSizeInMB.toFixed(2)}MB) exceeds the 25MB limit for Whisper API`);
+        throw createStandardError(
+          ERROR_TYPES.VALIDATION_ERROR,
+          `File size (${fileSizeInMB.toFixed(2)}MB) exceeds the 25MB limit for Whisper API`,
+          `File too large (${fileSizeInMB.toFixed(2)}MB). Maximum size is 25MB.`
+        );
       }
       
-      console.log(`[WhisperAPI] Transcribing file: ${path.basename(audioFilePath)} (${fileSizeInMB.toFixed(2)}MB)`);
+      structuredLog('info', 'WhisperApiClient', `Transcribing file: ${path.basename(audioFilePath)}`, {
+        fileSizeMB: fileSizeInMB.toFixed(2),
+        requestId
+      });
       
       // Create form data for multipart upload
       const formData = new FormData();
@@ -124,7 +316,7 @@ class WhisperApiClient {
         formData.append('prompt', prompt);
       }
       
-      // Make the API request with retry logic
+      // Make the API request with retry logic and cancellation support
       const response = await this._makeRequestWithRetry(
         '/audio/transcriptions',
         {
@@ -134,6 +326,8 @@ class WhisperApiClient {
             ...formData.getHeaders(),
             'Content-Type': 'multipart/form-data'
           },
+          signal: controller.signal, // Add abort signal for cancellation
+          timeout: timeout, // Use configured timeout
           onUploadProgress: (progressEvent) => {
             if (onProgress && progressEvent.total) {
               const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
@@ -141,21 +335,47 @@ class WhisperApiClient {
                 type: 'upload',
                 progress: percentCompleted,
                 loaded: progressEvent.loaded,
-                total: progressEvent.total
+                total: progressEvent.total,
+                requestId
               });
             }
           }
-        }
+        },
+        requestId
       );
       
-      console.log('[WhisperAPI] Transcription completed successfully');
+      structuredLog('info', 'WhisperApiClient', 'Transcription completed successfully', { requestId });
       const transcription = this._processTranscriptionResponse(response.data, response_format);
-      return { success: true, transcription };
+      
+      // Clean up the completed request
+      this.cleanupRequest(requestId);
+      
+      return { success: true, transcription, requestId };
       
     } catch (error) {
-      const detailedError = this._createTranscriptionError(error);
-      console.error('[WhisperAPI] Transcription failed:', detailedError.message);
-      return { success: false, error: detailedError.message, details: detailedError };
+      // Clean up the request on error
+      this.cleanupRequest(requestId);
+      
+      // Handle cancellation specifically
+      if (error.name === 'AbortError') {
+        const cancelError = createStandardError(
+          ERROR_TYPES.API_ERROR,
+          `Transcription request ${requestId} was canceled`,
+          'Transcription was canceled',
+          { requestId, timeout }
+        );
+        structuredLog('warn', 'WhisperApiClient', cancelError.message);
+        throw cancelError;
+      }
+      
+      const detailedError = this._createTranscriptionError(error, requestId);
+      structuredLog('error', 'WhisperApiClient', 'Transcription failed', {
+        requestId,
+        error: detailedError.message,
+        type: detailedError.type
+      });
+      
+      return { success: false, error: detailedError.message, details: detailedError, requestId };
     }
   }
   

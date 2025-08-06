@@ -16,6 +16,17 @@ const Settings = ({ isOpen, onClose }) => {
   const [hotkey, setHotkey] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [hotkeyStatus, setHotkeyStatus] = useState('');
+  const [modeErrorMessage, setModeErrorMessage] = useState('');
+  const [modeTroubleshootingTips, setModeTroubleshootingTips] = useState('');
+
+  // New states for dependency management
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [isInstallingDependencies, setIsInstallingDependencies] = useState(false);
+  const [installationProgress, setInstallationProgress] = useState({ stage: '', progress: 0, message: '' });
+  const [installationResult, setInstallationResult] = useState(null);
+  const [pythonEnvironments, setPythonEnvironments] = useState([]);
+  const [selectedPythonPath, setSelectedPythonPath] = useState('');
+  const [setupStatus, setSetupStatus] = useState(''); // 'checking', 'ready', 'needs_setup', 'error'
 
   const handleKeyDown = useCallback((e) => {
     e.preventDefault();
@@ -65,6 +76,7 @@ const Settings = ({ isOpen, onClose }) => {
       checkCurrentApiKey();
       loadSettings();
       checkLocalServiceStatus();
+      checkSetupStatus();
       statusInterval = setInterval(checkLocalServiceStatus, 5000);
     }
 
@@ -74,6 +86,19 @@ const Settings = ({ isOpen, onClose }) => {
       }
     };
   }, [isOpen]);
+
+  // Set up dependency installation progress listener
+  useEffect(() => {
+    if (!window.electronAPI?.onDependencyInstallationProgress) return;
+
+    const removeProgressListener = window.electronAPI.onDependencyInstallationProgress((event, progress) => {
+      setInstallationProgress(progress);
+    });
+
+    return () => {
+      removeProgressListener();
+    };
+  }, []);
 
   useEffect(() => {
     if (isRecording) {
@@ -87,14 +112,34 @@ const Settings = ({ isOpen, onClose }) => {
     };
   }, [isRecording, handleKeyDown]);
 
+  // Safe localStorage helper functions
+  const safeGetLocalStorage = (key, defaultValue) => {
+    try {
+      return localStorage.getItem(key) || defaultValue;
+    } catch (error) {
+      console.warn(`Failed to read from localStorage key "${key}":`, error);
+      return defaultValue;
+    }
+  };
+
+  const safeSetLocalStorage = (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      console.warn(`Failed to write to localStorage key "${key}":`, error);
+      return false;
+    }
+  };
+
   const loadSettings = async () => {
     try {
       // Load saved transcription mode
-      const savedMode = localStorage.getItem('transcriptionMode') || 'cloud';
+      const savedMode = safeGetLocalStorage('transcriptionMode', 'cloud');
       setTranscriptionMode(savedMode);
       
       // Load saved model selection
-      const savedModel = localStorage.getItem('selectedModel') || 'base';
+      const savedModel = safeGetLocalStorage('selectedModel', 'base');
       setSelectedModel(savedModel);
 
       // Try to get hotkey from the main process config
@@ -208,8 +253,57 @@ const Settings = ({ isOpen, onClose }) => {
 
   const handleModeChange = async (mode) => {
     try {
+      // Clear any previous error messages
+      setModeErrorMessage('');
+      setModeTroubleshootingTips('');
+      
       setTranscriptionMode(mode);
-      localStorage.setItem('transcriptionMode', mode);
+      safeSetLocalStorage('transcriptionMode', mode);
+      
+      // Notify the main process about the mode change
+      if (window.electronAPI?.whisper?.setMode) {
+        const result = await window.electronAPI.whisper.setMode(mode);
+        if (!result.success) {
+          console.error('Failed to switch transcription mode:', result.error);
+          
+          // Show user-friendly error message
+          const errorMessage = result.userFriendlyError || result.error;
+          const troubleshootingTips = result.troubleshootingTips;
+          
+          // Check if a fallback occurred
+          if (result.fallbackUsed && result.actualMode) {
+            // Update UI to reflect the actual service being used
+            console.log(`Fallback occurred: requested ${result.requestedMode}, using ${result.actualMode}`);
+            setTranscriptionMode(result.actualMode);
+            safeSetLocalStorage('transcriptionMode', result.actualMode);
+            
+            // Show a detailed notification to the user about the fallback
+            if (result.actualMode === 'cloud' && result.requestedMode === 'local') {
+              console.warn('Local service is not available. Falling back to cloud service.');
+              
+              // Set error message states for UI display
+              setModeErrorMessage(`Unable to switch to local transcription: ${errorMessage}`);
+              if (troubleshootingTips) {
+                setModeTroubleshootingTips(troubleshootingTips);
+              }
+            }
+          } else {
+            // No fallback, genuine failure - revert the UI state
+            const previousMode = mode === 'local' ? 'cloud' : 'local';
+            setTranscriptionMode(previousMode);
+            safeSetLocalStorage('transcriptionMode', previousMode);
+            
+            // Show error message for genuine failures
+            console.error('Mode switch failed without fallback:', errorMessage);
+            setModeErrorMessage(`Failed to switch to ${mode} mode: ${errorMessage}`);
+            if (troubleshootingTips) {
+              console.info('Troubleshooting tips:', troubleshootingTips);
+              setModeTroubleshootingTips(troubleshootingTips);
+            }
+          }
+          return;
+        }
+      }
       
       // If switching to local mode, ensure service is available
       if (mode === 'local') {
@@ -217,6 +311,10 @@ const Settings = ({ isOpen, onClose }) => {
       }
     } catch (error) {
       console.error('Error changing transcription mode:', error);
+      // Revert the UI state on error
+      const previousMode = mode === 'local' ? 'cloud' : 'local';
+      setTranscriptionMode(previousMode);
+      safeSetLocalStorage('transcriptionMode', previousMode);
     }
   };
 
@@ -261,7 +359,7 @@ const Settings = ({ isOpen, onClose }) => {
   const handleModelChange = async (model) => {
     try {
       setSelectedModel(model);
-      localStorage.setItem('selectedModel', model);
+      safeSetLocalStorage('selectedModel', model);
       
       // If local service is running, change the model
       if (localServiceStatus === 'running' && window.electronAPI?.whisper?.local) {
@@ -272,6 +370,89 @@ const Settings = ({ isOpen, onClose }) => {
       }
     } catch (error) {
       console.error('Error changing model:', error);
+    }
+  };
+
+  // New dependency management functions
+  const checkSetupStatus = async () => {
+    if (!window.electronAPI?.whisper?.local) return;
+
+    setSetupStatus('checking');
+    try {
+      // Check if we have a working Python environment
+      const envResult = await window.electronAPI.whisper.local.findPythonEnvironments();
+      if (envResult.success && envResult.result && envResult.result.hasWhisper) {
+        setSetupStatus('ready');
+        setSelectedPythonPath(envResult.result.pythonPath);
+      } else {
+        setSetupStatus('needs_setup');
+        // Get available Python environments for setup
+        const condaEnvs = await window.electronAPI.whisper.local.findCondaEnvironments();
+        setPythonEnvironments(condaEnvs.environments || []);
+      }
+    } catch (error) {
+      console.error('Error checking setup status:', error);
+      setSetupStatus('error');
+    }
+  };
+
+  const handleAutoInstallDependencies = async (options = {}) => {
+    setIsInstallingDependencies(true);
+    setInstallationResult(null);
+    setInstallationProgress({ stage: 'starting', progress: 0, message: 'Starting installation...' });
+
+    try {
+      const result = await window.electronAPI.whisper.local.autoInstallDependencies({
+        useVirtualEnv: true,
+        forcePythonPath: selectedPythonPath || null,
+        ...options
+      });
+
+      setInstallationResult(result);
+      
+      if (result.success) {
+        setSetupStatus('ready');
+        setSelectedPythonPath(result.pythonPath);
+        // Refresh local service status
+        setTimeout(() => {
+          checkLocalServiceStatus();
+        }, 2000);
+      } else {
+        console.error('Dependency installation failed:', result);
+      }
+    } catch (error) {
+      console.error('Error during dependency installation:', error);
+      setInstallationResult({
+        success: false,
+        error: error.message,
+        suggestion: 'Please try manual installation or check the troubleshooting guide'
+      });
+    } finally {
+      setIsInstallingDependencies(false);
+    }
+  };
+
+  const handleQuickSetup = async () => {
+    setShowSetupWizard(true);
+    await handleAutoInstallDependencies();
+  };
+
+  const handleManualPythonSelection = async (pythonPath) => {
+    setSelectedPythonPath(pythonPath);
+    await handleAutoInstallDependencies({ forcePythonPath: pythonPath });
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      // Show temporary success message
+      const originalText = text;
+      setTimeout(() => {
+        // Could add a toast notification here
+        console.log('Copied to clipboard:', originalText);
+      }, 100);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
     }
   };
 
@@ -376,6 +557,40 @@ const Settings = ({ isOpen, onClose }) => {
                 </label>
               </div>
             </div>
+            
+            {modeErrorMessage && (
+              <div className="mode-error-message">
+                <div className="error-content">
+                  <div className="error-icon">⚠️</div>
+                  <div className="error-text">
+                    <div className="error-title">{modeErrorMessage}</div>
+                    {modeTroubleshootingTips && (
+                      <div className="error-tips">
+                        <strong>How to fix this:</strong> {modeTroubleshootingTips}
+                      </div>
+                    )}
+                    {setupStatus === 'needs_setup' && (
+                      <div className="error-actions">
+                        <button
+                          className="btn-primary"
+                          onClick={handleQuickSetup}
+                          disabled={isInstallingDependencies}
+                        >
+                          {isInstallingDependencies ? 'Setting Up...' : '🚀 Quick Setup'}
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          onClick={() => setShowSetupWizard(true)}
+                          disabled={isInstallingDependencies}
+                        >
+                          Manual Setup
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {transcriptionMode === 'local' && (
@@ -550,6 +765,238 @@ const Settings = ({ isOpen, onClose }) => {
           isOpen={showModelManager}
           onClose={() => setShowModelManager(false)}
         />
+      )}
+
+      {/* Setup Wizard Modal */}
+      {showSetupWizard && (
+        <div className="settings-overlay">
+          <div className="settings-modal setup-wizard-modal">
+            <div className="settings-header titlebar-drag">
+              <h2>🔧 Local Transcription Setup Wizard</h2>
+              <button 
+                className="close-btn titlebar-no-drag" 
+                onClick={() => setShowSetupWizard(false)}
+                disabled={isInstallingDependencies}
+                type="button"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" strokeWidth="2"/>
+                  <line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="settings-content">
+              <div className="setup-wizard-content">
+                {/* Setup Status */}
+                <div className="setup-status-section">
+                  <h3>Setup Status</h3>
+                  <div className="status-indicator">
+                    {setupStatus === 'checking' && (
+                      <div className="status-item checking">
+                        <div className="status-icon">🔍</div>
+                        <div className="status-text">Checking Python environment...</div>
+                      </div>
+                    )}
+                    {setupStatus === 'ready' && (
+                      <div className="status-item ready">
+                        <div className="status-icon">✅</div>
+                        <div className="status-text">
+                          Local transcription is ready!
+                          <div className="status-details">Python: {selectedPythonPath}</div>
+                        </div>
+                      </div>
+                    )}
+                    {setupStatus === 'needs_setup' && (
+                      <div className="status-item needs-setup">
+                        <div className="status-icon">⚙️</div>
+                        <div className="status-text">Local transcription needs to be set up</div>
+                      </div>
+                    )}
+                    {setupStatus === 'error' && (
+                      <div className="status-item error">
+                        <div className="status-icon">❌</div>
+                        <div className="status-text">Setup check failed</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Installation Progress */}
+                {isInstallingDependencies && (
+                  <div className="installation-progress-section">
+                    <h4>Installation Progress</h4>
+                    <div className="progress-container">
+                      <div className="progress-bar">
+                        <div 
+                          className="progress-fill"
+                          style={{ width: `${installationProgress.progress}%` }}
+                        ></div>
+                      </div>
+                      <div className="progress-info">
+                        <div className="progress-stage">{installationProgress.stage}</div>
+                        <div className="progress-message">{installationProgress.message}</div>
+                        <div className="progress-percent">{installationProgress.progress}%</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Installation Result */}
+                {installationResult && (
+                  <div className="installation-result-section">
+                    <h4>Installation Result</h4>
+                    {installationResult.success ? (
+                      <div className="result-success">
+                        <div className="result-icon">🎉</div>
+                        <div className="result-content">
+                          <div className="result-title">Installation Successful!</div>
+                          <div className="result-details">
+                            <div>Python: {installationResult.pythonPath}</div>
+                            {installationResult.whisperVersion && (
+                              <div>Whisper: {installationResult.whisperVersion}</div>
+                            )}
+                            {installationResult.virtualEnv && (
+                              <div>✨ Virtual environment created</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="result-error">
+                        <div className="result-icon">⚠️</div>
+                        <div className="result-content">
+                          <div className="result-title">Installation Failed</div>
+                          <div className="result-error-msg">{installationResult.error}</div>
+                          {installationResult.suggestion && (
+                            <div className="result-suggestion">
+                              <strong>Suggestion:</strong> {installationResult.suggestion}
+                            </div>
+                          )}
+                          {installationResult.installCommand && (
+                            <div className="result-command">
+                              <strong>Manual Command:</strong>
+                              <div className="command-box">
+                                <code>{installationResult.installCommand}</code>
+                                <button
+                                  className="copy-btn"
+                                  onClick={() => copyToClipboard(installationResult.installCommand)}
+                                  title="Copy to clipboard"
+                                >
+                                  📋
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Setup Actions */}
+                {!isInstallingDependencies && setupStatus !== 'ready' && (
+                  <div className="setup-actions-section">
+                    <h4>Setup Options</h4>
+                    
+                    <div className="setup-option">
+                      <h5>🚀 Automatic Setup (Recommended)</h5>
+                      <p>Creates a virtual environment and installs all required dependencies automatically.</p>
+                      <button
+                        className="btn-primary setup-btn"
+                        onClick={() => handleAutoInstallDependencies()}
+                        disabled={isInstallingDependencies}
+                      >
+                        Start Automatic Setup
+                      </button>
+                    </div>
+
+                    {pythonEnvironments.length > 0 && (
+                      <div className="setup-option">
+                        <h5>🐍 Use Existing Python Environment</h5>
+                        <p>Install dependencies in an existing Python environment:</p>
+                        <select 
+                          value={selectedPythonPath}
+                          onChange={(e) => setSelectedPythonPath(e.target.value)}
+                          className="python-env-select"
+                        >
+                          <option value="">Select Python environment...</option>
+                          {pythonEnvironments.map((envPath, index) => (
+                            <option key={index} value={envPath}>
+                              {envPath}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn-secondary setup-btn"
+                          onClick={() => handleManualPythonSelection(selectedPythonPath)}
+                          disabled={!selectedPythonPath || isInstallingDependencies}
+                        >
+                          Install in Selected Environment
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="setup-option manual-setup">
+                      <h5>⚒️ Manual Setup</h5>
+                      <p>If automatic setup doesn't work, you can install dependencies manually:</p>
+                      <div className="manual-commands">
+                        <div className="command-step">
+                          <strong>1. Install Python dependencies:</strong>
+                          <div className="command-box">
+                            <code>pip install openai-whisper torch</code>
+                            <button
+                              className="copy-btn"
+                              onClick={() => copyToClipboard('pip install openai-whisper torch')}
+                              title="Copy to clipboard"
+                            >
+                              📋
+                            </button>
+                          </div>
+                        </div>
+                        <div className="command-step">
+                          <strong>2. Or with conda:</strong>
+                          <div className="command-box">
+                            <code>conda install pytorch torchvision torchaudio && pip install openai-whisper</code>
+                            <button
+                              className="copy-btn"
+                              onClick={() => copyToClipboard('conda install pytorch torchvision torchaudio && pip install openai-whisper')}
+                              title="Copy to clipboard"
+                            >
+                              📋
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        className="btn-secondary"
+                        onClick={checkSetupStatus}
+                      >
+                        Check Setup Status
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {setupStatus === 'ready' && (
+                  <div className="setup-complete-section">
+                    <div className="setup-complete-message">
+                      <div className="success-icon">🎉</div>
+                      <h4>Setup Complete!</h4>
+                      <p>Local transcription is ready to use. You can now close this wizard and start transcribing.</p>
+                      <button
+                        className="btn-primary"
+                        onClick={() => setShowSetupWizard(false)}
+                      >
+                        Close Wizard
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

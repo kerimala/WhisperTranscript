@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm update)",
+      "Bash(npm audit:*)",
+      "Bash(npm view:*)",
+      "Bash(npm test)",
+      "Bash(npm run lint)",
+      "Bash(npm run test:main:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev:*)",
+      "Bash(python3:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}

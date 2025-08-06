@@ -13,10 +13,18 @@ import logging
 import signal
 import time
 import threading
+import mimetypes
+import struct
 from pathlib import Path
 from typing import Optional, Dict, Any
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
+
+# Check Python version compatibility
+MIN_PYTHON_VERSION = (3, 7)
+if sys.version_info < MIN_PYTHON_VERSION:
+    print(f"Error: Python {MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]}+ is required. Current version: {sys.version_info[0]}.{sys.version_info[1]}")
+    sys.exit(1)
 
 try:
     import whisper
@@ -30,6 +38,216 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def validate_audio_file_content(file_path: str) -> Dict[str, Any]:
+    """
+    Validate audio file by checking actual file content, not just extension.
+    
+    Args:
+        file_path: Path to the audio file
+        
+    Returns:
+        Dict with validation result and detected format
+    """
+    try:
+        if not os.path.exists(file_path):
+            return {
+                "valid": False,
+                "error": f"File not found: {file_path}",
+                "detected_format": None
+            }
+        
+        # Check file size (reasonable limits)
+        file_size = os.path.getsize(file_path)
+        max_size = 500 * 1024 * 1024  # 500MB limit for local processing
+        if file_size == 0:
+            return {
+                "valid": False,
+                "error": "File is empty",
+                "detected_format": None
+            }
+        
+        if file_size > max_size:
+            return {
+                "valid": False,
+                "error": f"File too large ({file_size / (1024*1024):.1f}MB). Maximum size: {max_size / (1024*1024):.1f}MB",
+                "detected_format": None
+            }
+        
+        # Read file header to detect format
+        with open(file_path, 'rb') as f:
+            header = f.read(32)  # Read first 32 bytes for format detection
+        
+        if len(header) < 4:
+            return {
+                "valid": False,
+                "error": "File too small or corrupted",
+                "detected_format": None
+            }
+        
+        detected_format = detect_audio_format(header, file_path)
+        
+        if not detected_format:
+            return {
+                "valid": False,
+                "error": "Unknown or unsupported audio format",
+                "detected_format": None
+            }
+        
+        # Validate format against supported formats
+        supported_formats = [
+            'mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'wma', 'webm'
+        ]
+        
+        if detected_format.lower() not in supported_formats:
+            return {
+                "valid": False,
+                "error": f"Unsupported audio format: {detected_format}",
+                "detected_format": detected_format
+            }
+        
+        return {
+            "valid": True,
+            "detected_format": detected_format,
+            "file_size": file_size
+        }
+        
+    except Exception as e:
+        return {
+            "valid": False,
+            "error": f"File validation error: {str(e)}",
+            "detected_format": None
+        }
+
+def detect_audio_format(header_bytes: bytes, file_path: str = None) -> Optional[str]:
+    """
+    Detect audio format from file header bytes.
+    
+    Args:
+        header_bytes: First few bytes of the file
+        file_path: Optional file path for additional context
+        
+    Returns:
+        Detected format string or None
+    """
+    # Check for common audio file signatures
+    if header_bytes.startswith(b'ID3') or header_bytes[6:10] == b'ftyp':
+        return 'mp3'
+    
+    # WAV format
+    if header_bytes[:4] == b'RIFF' and header_bytes[8:12] == b'WAVE':
+        return 'wav'
+    
+    # FLAC format
+    if header_bytes[:4] == b'fLaC':
+        return 'flac'
+    
+    # OGG Vorbis
+    if header_bytes[:4] == b'OggS':
+        return 'ogg'
+    
+    # WebM
+    if header_bytes[:4] == b'\x1a\x45\xdf\xa3':
+        return 'webm'
+    
+    # M4A/AAC (MP4 container)
+    if header_bytes[4:8] == b'ftyp':
+        # Check for M4A/AAC specific atoms
+        if b'M4A ' in header_bytes or b'mp42' in header_bytes:
+            return 'm4a'
+        elif b'aac ' in header_bytes:
+            return 'aac'
+    
+    # MP3 without ID3 tag (frame sync)
+    if len(header_bytes) >= 4:
+        # Check for MP3 frame sync pattern
+        for i in range(len(header_bytes) - 1):
+            if header_bytes[i] == 0xFF and (header_bytes[i + 1] & 0xE0) == 0xE0:
+                return 'mp3'
+    
+    # WMA format
+    if header_bytes[:16] == b'\x30\x26\xB2\x75\x8E\x66\xCF\x11\xA6\xD9\x00\xAA\x00\x62\xCE\x6C':
+        return 'wma'
+    
+    # Fallback to MIME type detection using file extension
+    if file_path:
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if mime_type and mime_type.startswith('audio/'):
+            # Map common MIME types to format names
+            mime_to_format = {
+                'audio/mpeg': 'mp3',
+                'audio/wav': 'wav',
+                'audio/x-wav': 'wav',
+                'audio/wave': 'wav',
+                'audio/flac': 'flac',
+                'audio/ogg': 'ogg',
+                'audio/mp4': 'm4a',
+                'audio/aac': 'aac',
+                'audio/x-ms-wma': 'wma',
+                'audio/webm': 'webm'
+            }
+            return mime_to_format.get(mime_type)
+    
+    return None
+
+def check_python_dependencies() -> Dict[str, Any]:
+    """
+    Check if required Python dependencies are available and compatible.
+    
+    Returns:
+        Dict with dependency check results
+    """
+    dependencies = {}
+    
+    # Check Python version
+    python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    dependencies['python'] = {
+        'version': python_version,
+        'compatible': sys.version_info >= MIN_PYTHON_VERSION,
+        'required': f"{MIN_PYTHON_VERSION[0]}.{MIN_PYTHON_VERSION[1]}+"
+    }
+    
+    # Check Whisper
+    try:
+        import whisper
+        whisper_version = getattr(whisper, '__version__', 'unknown')
+        dependencies['whisper'] = {
+            'version': whisper_version,
+            'available': True
+        }
+    except ImportError:
+        dependencies['whisper'] = {
+            'version': None,
+            'available': False,
+            'error': 'OpenAI Whisper library not found'
+        }
+    
+    # Check PyTorch (Whisper dependency)
+    try:
+        import torch
+        torch_version = torch.__version__
+        dependencies['torch'] = {
+            'version': torch_version,
+            'available': True,
+            'cuda_available': torch.cuda.is_available() if hasattr(torch.cuda, 'is_available') else False
+        }
+    except ImportError:
+        dependencies['torch'] = {
+            'version': None,
+            'available': False,
+            'error': 'PyTorch not found'
+        }
+    
+    # Check if all critical dependencies are available
+    all_available = all(
+        dep.get('available', dep.get('compatible', False)) 
+        for dep in dependencies.values()
+    )
+    
+    return {
+        'all_available': all_available,
+        'dependencies': dependencies
+    }
 
 class WhisperLocalService:
     """
@@ -83,19 +301,16 @@ class WhisperLocalService:
                     "error": "Failed to load Whisper model"
                 }
         
-        if not os.path.exists(audio_path):
+        # Comprehensive file validation (content-based, not just extension)
+        validation_result = validate_audio_file_content(audio_path)
+        if not validation_result["valid"]:
             return {
                 "success": False,
-                "error": f"Audio file not found: {audio_path}"
+                "error": validation_result["error"],
+                "detected_format": validation_result.get("detected_format")
             }
         
-        # Validate file format
-        file_ext = Path(audio_path).suffix.lower()
-        if file_ext not in self.supported_formats:
-            return {
-                "success": False,
-                "error": f"Unsupported audio format: {file_ext}"
-            }
+        logger.info(f"File validation passed: {validation_result['detected_format']} format, {validation_result['file_size'] / 1024:.1f}KB")
         
         try:
             # Set default options
@@ -290,6 +505,16 @@ class WhisperDaemonHandler(BaseHTTPRequestHandler):
                 result = self.whisper_service.test_service()
             elif parsed_url.path == '/models':
                 result = self.whisper_service.get_available_models()
+            elif parsed_url.path == '/system':
+                result = {
+                    "success": True,
+                    "system_info": check_python_dependencies(),
+                    "service_info": {
+                        "supported_formats": self.whisper_service.supported_formats,
+                        "current_model": self.whisper_service.model_name,
+                        "model_loaded": self.whisper_service.model is not None
+                    }
+                }
             else:
                 result = {
                     "success": False,
