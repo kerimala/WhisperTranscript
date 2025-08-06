@@ -620,18 +620,23 @@ class WhisperLocalClient extends EventEmitter {
     const { 
       forcePythonPath = null,
       useVirtualEnv = true,
-      onProgress = null 
+      onProgress = null,
+      cleanInstall = false
     } = options;
 
-    console.log('[WhisperLocal] Starting automated dependency installation...');
+    console.log(`[WhisperLocal] Starting automated dependency installation... (cleanInstall: ${cleanInstall})`);
     
     if (onProgress) {
-      onProgress({ stage: 'checking', progress: 0, message: 'Checking Python environment...' });
+      onProgress({ 
+        stage: cleanInstall ? 'cleaning' : 'checking', 
+        progress: 0, 
+        message: cleanInstall ? 'Preparing clean installation...' : 'Checking Python environment...' 
+      });
     }
 
     try {
-      // First, check if we already have a working Python with whisper
-      if (!forcePythonPath) {
+      // First, check if we already have a working Python with whisper (unless clean install requested)
+      if (!forcePythonPath && !cleanInstall) {
         const workingPython = await this.findWorkingPythonPath();
         if (workingPython) {
           console.log('[WhisperLocal] Found working Python with whisper, no installation needed');
@@ -685,7 +690,7 @@ class WhisperLocalClient extends EventEmitter {
       }
 
       // Install openai-whisper with progress tracking
-      const installResult = await this.installWhisperPackage(actualPipCommand, onProgress);
+      const installResult = await this.installWhisperPackage(actualPipCommand, onProgress, cleanInstall);
       
       if (!installResult.success) {
         return {
@@ -809,18 +814,35 @@ class WhisperLocalClient extends EventEmitter {
    * Install Whisper package with progress tracking
    * @param {string} pipCommand - Pip command to use
    * @param {Function} onProgress - Progress callback
+   * @param {boolean} cleanInstall - Whether to perform clean install
    * @returns {Promise<Object>} Installation result
    */
-  async installWhisperPackage(pipCommand, onProgress = null) {
+  async installWhisperPackage(pipCommand, onProgress = null, cleanInstall = false) {
     try {
-      console.log(`[WhisperLocal] Installing openai-whisper using: ${pipCommand}`);
+      console.log(`[WhisperLocal] Installing openai-whisper using: ${pipCommand} (cleanInstall: ${cleanInstall})`);
       
-      if (onProgress) {
-        onProgress({ stage: 'downloading', progress: 45, message: 'Downloading Whisper package...' });
+      let installCommand;
+      
+      if (cleanInstall) {
+        if (onProgress) {
+          onProgress({ stage: 'cleaning', progress: 35, message: 'Cleaning existing installation...' });
+        }
+        
+        // Use architecture-specific fix command for clean installs
+        installCommand = await this.getArchitectureFixCommand(pipCommand);
+        console.log(`[WhisperLocal] Using architecture fix command: ${installCommand}`);
+      } else {
+        if (onProgress) {
+          onProgress({ stage: 'downloading', progress: 45, message: 'Downloading Whisper package...' });
+        }
+        
+        // Determine the correct PyTorch installation command based on platform
+        installCommand = await this.getPlatformSpecificInstallCommand(pipCommand);
+        console.log(`[WhisperLocal] Using platform-specific install command: ${installCommand}`);
       }
 
       // Install with verbose output for better progress tracking
-      const installResult = await this._runCommand('bash', ['-c', `${pipCommand} install openai-whisper torch`], {
+      const installResult = await this._runCommand('bash', ['-c', installCommand], {
         timeout: 600000, // 10 minutes timeout
         onProgress: (data) => {
           // Parse pip output for progress updates
@@ -855,6 +877,12 @@ class WhisperLocalClient extends EventEmitter {
           suggestion = 'Network error. Check your internet connection and try again';
         } else if (errorMsg.includes('disk space') || errorMsg.includes('space')) {
           suggestion = 'Insufficient disk space. Please free up some space and try again';
+        } else if (errorMsg.includes('incompatible architecture') || errorMsg.includes('have \'x86_64\', need \'arm64')) {
+          suggestion = 'Architecture mismatch detected. The installation used the wrong CPU architecture for your Mac.';
+          installCommand = await this.getArchitectureFixCommand(pipCommand);
+        } else if (errorMsg.includes('mach-o file') || errorMsg.includes('libtorch')) {
+          suggestion = 'PyTorch architecture conflict. This often happens on Apple Silicon Macs.';
+          installCommand = await this.getArchitectureFixCommand(pipCommand);
         }
 
         return {
@@ -935,6 +963,105 @@ class WhisperLocalClient extends EventEmitter {
     }
 
     return condaPaths;
+  }
+
+  /**
+   * Get platform-specific installation command for PyTorch and Whisper
+   * @param {string} pipCommand - Base pip command
+   * @returns {Promise<string>} Platform-optimized installation command
+   */
+  async getPlatformSpecificInstallCommand(pipCommand) {
+    const platform = process.platform;
+    const arch = process.arch;
+    
+    console.log(`[WhisperLocal] Detecting platform: ${platform}, architecture: ${arch}`);
+
+    // For Apple Silicon Macs, we need to ensure we get the ARM64 version of PyTorch
+    if (platform === 'darwin' && arch === 'arm64') {
+      console.log('[WhisperLocal] Apple Silicon Mac detected - using ARM64 PyTorch');
+      
+      // Check if this is a native ARM64 Python or running under Rosetta
+      const pythonArch = await this.detectPythonArchitecture(pipCommand);
+      
+      if (pythonArch === 'arm64') {
+        // Native ARM64 Python - install ARM64 PyTorch
+        return `${pipCommand} install --upgrade pip && ${pipCommand} install torch torchvision torchaudio && ${pipCommand} install openai-whisper`;
+      } else {
+        // Python running under Rosetta or x86_64 - need to be more specific
+        console.warn('[WhisperLocal] Python appears to be running under Rosetta or is x86_64. Attempting ARM64 PyTorch installation anyway.');
+        return `${pipCommand} install --upgrade pip && ${pipCommand} install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && ${pipCommand} install openai-whisper`;
+      }
+    } 
+    // For Intel Macs
+    else if (platform === 'darwin' && arch === 'x64') {
+      console.log('[WhisperLocal] Intel Mac detected');
+      return `${pipCommand} install --upgrade pip && ${pipCommand} install torch torchvision torchaudio && ${pipCommand} install openai-whisper`;
+    }
+    // For Windows
+    else if (platform === 'win32') {
+      console.log('[WhisperLocal] Windows detected');
+      return `${pipCommand} install --upgrade pip && ${pipCommand} install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 && ${pipCommand} install openai-whisper`;
+    }
+    // For Linux
+    else if (platform === 'linux') {
+      console.log('[WhisperLocal] Linux detected');
+      return `${pipCommand} install --upgrade pip && ${pipCommand} install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && ${pipCommand} install openai-whisper`;
+    }
+    // Fallback for unknown platforms
+    else {
+      console.log(`[WhisperLocal] Unknown platform ${platform}/${arch}, using generic installation`);
+      return `${pipCommand} install --upgrade pip && ${pipCommand} install torch torchvision torchaudio && ${pipCommand} install openai-whisper`;
+    }
+  }
+
+  /**
+   * Detect the architecture that Python is running under
+   * @param {string} pipCommand - Pip command to test
+   * @returns {Promise<string>} Architecture ('arm64', 'x86_64', or 'unknown')
+   */
+  async detectPythonArchitecture(pipCommand) {
+    try {
+      // Extract Python path from pip command
+      const pythonPath = pipCommand.includes(' -m pip') ? pipCommand.replace(' -m pip', '') : 'python3';
+      
+      // Check Python's platform.machine()
+      const result = await this._runCommand(pythonPath, ['-c', 'import platform; print(platform.machine())'], { timeout: 5000 });
+      
+      if (result.success) {
+        const arch = result.output.trim().toLowerCase();
+        console.log(`[WhisperLocal] Python architecture: ${arch}`);
+        
+        if (arch.includes('arm64') || arch.includes('aarch64')) {
+          return 'arm64';
+        } else if (arch.includes('x86_64') || arch.includes('amd64')) {
+          return 'x86_64';
+        }
+      }
+      
+      console.warn('[WhisperLocal] Could not detect Python architecture:', result.error || 'Unknown error');
+      return 'unknown';
+    } catch (error) {
+      console.error('[WhisperLocal] Error detecting Python architecture:', error);
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Get architecture-specific fix command for PyTorch conflicts
+   * @param {string} pipCommand - Base pip command
+   * @returns {Promise<string>} Fix command for architecture issues
+   */
+  async getArchitectureFixCommand(pipCommand) {
+    const platform = process.platform;
+    const arch = process.arch;
+
+    if (platform === 'darwin' && arch === 'arm64') {
+      // Apple Silicon Mac - force clean installation with correct architecture
+      return `${pipCommand} uninstall -y torch torchvision torchaudio && ${pipCommand} cache purge && ${pipCommand} install --no-cache-dir torch torchvision torchaudio && ${pipCommand} install --no-cache-dir --force-reinstall openai-whisper`;
+    } else {
+      // Other platforms - generic clean reinstall
+      return `${pipCommand} uninstall -y torch torchvision torchaudio openai-whisper && ${pipCommand} cache purge && ${pipCommand} install --no-cache-dir torch torchvision torchaudio openai-whisper`;
+    }
   }
 
   /**

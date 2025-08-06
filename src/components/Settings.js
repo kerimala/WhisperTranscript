@@ -867,15 +867,52 @@ const Settings = ({ isOpen, onClose }) => {
                         <div className="result-icon">⚠️</div>
                         <div className="result-content">
                           <div className="result-title">Installation Failed</div>
-                          <div className="result-error-msg">{installationResult.error}</div>
+                          <div className="result-error-msg">
+                            {installationResult.error && installationResult.error.includes('incompatible architecture') ? (
+                              <>
+                                <strong>Architecture Mismatch Detected</strong>
+                                <br />
+                                Your Mac has an Apple Silicon (ARM64) processor, but PyTorch was installed for Intel (x86_64). This is a common issue that can be automatically fixed.
+                              </>
+                            ) : installationResult.error && installationResult.error.includes('libtorch') ? (
+                              <>
+                                <strong>PyTorch Architecture Conflict</strong>
+                                <br />
+                                There's a mismatch between your Mac's processor architecture and the installed PyTorch version.
+                              </>
+                            ) : (
+                              installationResult.error
+                            )}
+                          </div>
                           {installationResult.suggestion && (
                             <div className="result-suggestion">
-                              <strong>Suggestion:</strong> {installationResult.suggestion}
+                              <strong>How to fix this:</strong> {installationResult.suggestion}
                             </div>
                           )}
+                          
+                          {/* Architecture fix button for Apple Silicon */}
+                          {(installationResult.error && 
+                            (installationResult.error.includes('incompatible architecture') || 
+                             installationResult.error.includes('libtorch'))) && (
+                            <div className="architecture-fix-section">
+                              <h5>🔧 Automatic Fix for Apple Silicon</h5>
+                              <p>Click the button below to automatically fix the architecture mismatch:</p>
+                              <button
+                                className="btn-primary"
+                                onClick={() => handleAutoInstallDependencies({ 
+                                  forcePythonPath: selectedPythonPath || null,
+                                  cleanInstall: true 
+                                })}
+                                disabled={isInstallingDependencies}
+                              >
+                                {isInstallingDependencies ? 'Fixing...' : '🔧 Fix Architecture Issue'}
+                              </button>
+                            </div>
+                          )}
+                          
                           {installationResult.installCommand && (
                             <div className="result-command">
-                              <strong>Manual Command:</strong>
+                              <strong>Or run this command manually:</strong>
                               <div className="command-box">
                                 <code>{installationResult.installCommand}</code>
                                 <button
