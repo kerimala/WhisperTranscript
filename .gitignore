@@ -1,29 +1,56 @@
-# Logs
-logs
-*.log
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-dev-debug.log
+.pnpm-debug.log*
 
-# Dependency directories
-node_modules/
+# env files
+.env*
+!.env.example
 
-# Environment variables
-.env
+# vercel
+.vercel
 
-# Editor directories and files
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE
 .idea
 .vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
-# Build outputs and distribution files
-dist/
-build/
+# Python backend
+__pycache__/
+*.pyc
+.venv/
 
-# OS specific
-.DS_Store
+# Local transcription data and audio fixtures
+/transcriptions/
+/docs/copy.txt
+/docs/diarized.md
+/local_backend/test_10s.wav
+/local_backend/test_audio.wav

@@ -1,94 +1,41 @@
 {
-  "name": "whisper-transcript",
-  "version": "1.0.0",
+  "name": "whisper-for-files",
+  "version": "0.1.0",
   "private": true,
-  "description": "A desktop application for audio transcription using OpenAI Whisper",
-  "main": "src/main/main.js",
-  "homepage": "./",
   "scripts": {
-    "start": "electron .",
-    "dev": "concurrently \"npm run dev:renderer\" \"wait-on http://localhost:3001 && npm run dev:electron\"",
-    "dev:renderer": "PORT=3001 react-scripts start",
-    "dev:electron": "electron .",
-    "build": "npm run build:renderer",
-    "build:renderer": "react-scripts build",
-    "build:electron": "electron-builder",
-    "dist": "npm run build && electron-builder --publish=never",
-    "dist:all": "npm run build && electron-builder -mwl --publish=never",
-    "dist:mac": "npm run build && electron-builder --mac --publish=never",
-    "dist:win": "npm run build && electron-builder --win --publish=never",
-    "dist:linux": "npm run build && electron-builder --linux --publish=never",
-    "pack": "electron-builder --dir",
-    "pack:all": "electron-builder --dir -mwl",
-    "postinstall": "electron-builder install-app-deps",
-    "clean": "rimraf build dist node_modules/.cache",
-    "rebuild": "npm run clean && npm install",
-    "test": "react-scripts test",
-    "test:unit": "react-scripts test --watchAll=false",
-    "test:unit:coverage": "react-scripts test --coverage --watchAll=false",
-    "test:main": "jest --config jest.main.config.js",
-    "test:main:coverage": "jest --config jest.main.config.js --coverage",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:debug": "playwright test --debug",
-    "test:all": "npm run test:unit && npm run test:main && npm run test:e2e",
-    "eject": "react-scripts eject"
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "jest"
   },
-  "keywords": [
-    "electron",
-    "react",
-    "whisper",
-    "transcription",
-    "audio",
-    "desktop"
-  ],
-  "author": "Your Name",
-  "license": "MIT",
   "dependencies": {
-    "@testing-library/react": "^13.3.0",
-    "@testing-library/user-event": "^13.5.0",
-    "axios": "^1.10.0",
-    "dotenv": "^17.0.1",
-    "form-data": "^4.0.3",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4"
+    "@types/fluent-ffmpeg": "^2.1.28",
+    "fluent-ffmpeg": "^2.1.3",
+    "groq-sdk": "^0.8.0",
+    "next": "^16.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.40.0",
-    "@testing-library/jest-dom": "^6.6.3",
-    "concurrently": "^7.6.0",
-    "electron": "^28.0.0",
-    "electron-builder": "^24.9.1",
-    "jest-environment-jsdom": "^29.7.0",
-    "playwright": "^1.40.0",
-    "rimraf": "^5.0.10",
-    "wait-on": "^7.0.1"
+    "@eslint/eslintrc": "^3.3.3",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^10.0.1",
+    "eslint-config-next": "^16.1.6",
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "postcss": "^8.5.0",
+    "tailwindcss": "^4.0.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.7.0"
   },
-  "build": {
-    "appId": "com.whispertranscript.app",
-    "productName": "WhisperTranscript",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "build/**/*",
-      "src/main/**/*",
-      "node_modules/**/*",
-      "package.json"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+  "overrides": {
+    "minimatch": "^10.2.2",
+    "glob": "^13.0.0",
+    "test-exclude": "^8.0.0"
   }
 }

@@ -1,0 +1,8 @@
+mlx-whisper
+pyannote.audio>=3.1
+fastapi
+uvicorn[standard]
+python-multipart
+torch
+torchaudio
+numpy
