@@ -26,9 +26,11 @@ def diarize(
             "pyannote/speaker-diarization-3.1",
             token=hf_token,
         )
-        # With MLX-Whisper strictly unloaded, we can now safely run Pyannote
-        # on Apple Silicon Metal (MPS) to speed up embedding clustering 20x.
-        if torch.backends.mps.is_available():
+        # The transcription engine is unloaded before diarization, so Pyannote
+        # can use the best available Torch accelerator without competing for VRAM.
+        if torch.cuda.is_available():
+            _pipeline.to(torch.device("cuda"))
+        elif torch.backends.mps.is_available():
             _pipeline.to(torch.device("mps"))
         else:
             _pipeline.to(torch.device("cpu"))
@@ -75,7 +77,7 @@ def unload_diarizer():
     gc.collect()
     
     # Explicitly clear Metal Performance Shaders (MPS) cache to instantly release GPU VRAM
-    if torch.backends.mps.is_available():
-        torch.mps.empty_cache()
-    elif torch.cuda.is_available():
+    if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    elif torch.backends.mps.is_available():
+        torch.mps.empty_cache()

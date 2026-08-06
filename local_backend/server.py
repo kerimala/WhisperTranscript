@@ -1,5 +1,5 @@
 """
-Local Metal Whisper + Speaker Diarization Server
+Cross-platform local Whisper + Speaker Diarization Server
 
 POST /transcribe
   - file: audio file (multipart)
@@ -41,17 +41,27 @@ if _hf_startup_token:
     except Exception:
         pass  # non-fatal – mlx_whisper will still work anonymously
 
-from transcriber import transcribe, unload_model
-from diarizer import diarize, unload_diarizer
+from engines.runtime import get_engine, get_runtime_status
 from merger import merge
 from formatter import format_diarized
 
-app = FastAPI(title="Local Whisper + Diarization", version="1.0.0")
+app = FastAPI(title="Whisper For Files Local Runtime", version="2.0.0")
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    import importlib.util
+
+    status = dict(get_runtime_status())
+    try:
+        diarization_available = importlib.util.find_spec("pyannote.audio") is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        diarization_available = False
+    status["diarization"] = {
+        "available": diarization_available,
+        "configured": bool(os.environ.get("HF_TOKEN", "").strip()),
+    }
+    return status
 
 
 @app.post("/transcribe")
@@ -79,13 +89,19 @@ async def transcribe_audio(
     file_type = file.content_type or "audio/mpeg"
 
     def run_transcription():
+        engine = None
         try:
             print(f"\n[{datetime.now().strftime('%H:%M:%S')}] ========================================================")
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Processing file: {file_name} ({file_size_bytes} bytes)")
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting transcription using MLX Whisper...")
+            engine = get_engine()
+            engine_info = engine.metadata
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] Starting transcription "
+                f"using {engine_info.display_name} on {engine_info.device}..."
+            )
             
             lang_arg = language.strip() or None
-            whisper_result = transcribe(audio_path, language=lang_arg)
+            whisper_result = engine.transcribe(audio_path, language=lang_arg)
             segments: list[dict] = whisper_result.get("segments", [])
             detected_language: str = whisper_result.get("language", "")
             full_text: str = whisper_result.get("text", "")
@@ -94,8 +110,8 @@ async def transcribe_audio(
             
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Transcription complete. Total segments: {len(segments)}")
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Detected language: {detected_language}")
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Unloading Whisper model from Metal memory...")
-            unload_model()
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Unloading Whisper model...")
+            engine.unload()
 
             created_at = datetime.now(timezone.utc).isoformat()
             diarized_text = None
@@ -114,6 +130,8 @@ async def transcribe_audio(
                     diarize_path = audio_path
 
                 try:
+                    from diarizer import diarize, unload_diarizer
+
                     print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting Pyannote Speaker Diarization...")
                     diarization_turns = diarize(
                         diarize_path, hf_token=hf_token.strip(),
@@ -159,7 +177,10 @@ async def transcribe_audio(
                     "size_bytes": file_size_bytes,
                 },
                 "provider": "local",
-                "model": "whisper-large-v3-turbo",
+                "model": engine_info.model,
+                "engine": engine_info.id,
+                "accelerator": engine_info.accelerator,
+                "device": engine_info.device,
                 "language": detected_language,
                 "segments": mapped_segments,
                 "full_text": full_text,
@@ -175,6 +196,11 @@ async def transcribe_audio(
             traceback.print_exc()
             return json.dumps({"error": True, "message": str(exc)})
         finally:
+            if engine is not None:
+                try:
+                    engine.unload()
+                except Exception:
+                    pass
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     async def stream_generator():

@@ -1,12 +1,13 @@
 # Whisper For Files
 
-A production-ready transcription web app with selectable Whisper providers — cloud (Groq, OpenAI) or fully local on Apple Silicon.
+A production-ready transcription web app with selectable Whisper providers — cloud (Groq, OpenAI) or local acceleration on Apple Silicon, NVIDIA, AMD, Intel, and CPU-only systems.
 
 ## Features
 
 - 🎙️ **Audio Transcription** — Convert audio files to text using Whisper
-- 🔀 **Provider Selection** — Choose Groq, OpenAI, or Local (Metal) in the UI
-- 🍎 **Local Mode** — Runs entirely on-device via MLX on Apple Silicon (no API key needed)
+- 🔀 **Provider Selection** — Choose Groq, OpenAI, or Local (Auto) in the UI
+- 🧠 **Automatic Hardware Detection** — Selects MLX, CUDA, Vulkan/ROCm, or CPU at runtime
+- 🔒 **Local Mode** — Runs entirely on-device with no transcription API key
 - 🗣️ **Speaker Diarization** — Identify who said what (local mode, requires HuggingFace token)
 - 📁 **Multiple Formats** — flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm
 - 📊 **Structured Output** — JSON with segments, timestamps, and metadata
@@ -20,15 +21,18 @@ A production-ready transcription web app with selectable Whisper providers — c
 - **ffmpeg** — Required for audio processing
 - **Python 3.10+** — Only needed for local transcription mode
 
-### Installing ffmpeg (macOS)
+### Installing ffmpeg
 
 ```bash
 brew install ffmpeg
+
+# Ubuntu / WSL
+sudo apt install ffmpeg
 ```
 
 ## Quick Start
 
-### Option 1: Local transcription (recommended for Apple Silicon)
+### Option 1: Local transcription (macOS, Linux, or WSL)
 
 ```bash
 # One command starts both backend + frontend:
@@ -37,10 +41,21 @@ bash dev.sh
 
 This will:
 1. Set up a Python venv and install dependencies (first run only)
-2. Start the Metal-accelerated Whisper backend on port 8001
-3. Start the Next.js frontend on port 3000
+2. Detect the platform and GPU, then install the matching runtime profile
+3. Start the selected Whisper backend on port 8001
+4. Start the Next.js frontend on port 3000
 
-### Option 2: Cloud-only
+The first local setup and model load can download several gigabytes. Models are downloaded lazily on the first transcription, not during a health check.
+
+### Option 2: Native Windows
+
+```powershell
+.\dev-windows.ps1
+```
+
+Native Windows NVIDIA requires CUDA 12 and cuDNN 9 DLLs on `PATH`. For this project's primary Windows development path, NVIDIA CUDA under WSL is the easiest supported setup.
+
+### Option 3: Cloud-only
 
 ```bash
 npm install
@@ -61,6 +76,11 @@ Open [http://localhost:3000](http://localhost:3000) to use the app.
 | `KIMI_API_KEY` | For AI analysis | Kimi K2.5 API key |
 | `DEEPSEEK_API_KEY` | For AI analysis | DeepSeek API key |
 | `AI_ANALYSIS_PROVIDER` | Optional | Default AI provider: `kimi` or `deepseek` |
+| `WHISPER_ENGINE` | Optional | `auto`, `mlx`, `cuda`, `vulkan`, `rocm`, or `cpu` |
+| `WHISPER_MODEL` | Optional | Override the default `large-v3-turbo` model |
+| `WHISPER_COMPUTE_TYPE` | Optional | Faster Whisper compute type, such as `float16` or `int8_float16` |
+| `WHISPER_CPP_BIN` | Vulkan/ROCm | Path to a `whisper.cpp` CLI binary |
+| `WHISPER_CPP_MODEL` | Vulkan/ROCm | Path to a GGML Whisper model |
 
 ## Providers
 
@@ -68,14 +88,29 @@ Open [http://localhost:3000](http://localhost:3000) to use the app.
 |----------|-------|-------|
 | **Groq** | `whisper-large-v3-turbo` | Fast cloud transcription |
 | **OpenAI** | `whisper-1` | OpenAI's hosted Whisper |
-| **Local (Metal)** | `whisper-large-v3-turbo` via MLX | Runs on-device, no API key, supports speaker diarization |
+| **Local (Auto)** | `large-v3-turbo` | Auto-selects the best configured local engine |
 
 ## Local Backend
 
-The local backend (`local_backend/`) runs Whisper via [mlx-whisper](https://github.com/ml-explore/mlx-examples) on Apple Silicon Metal GPU. Optimized for MacBook Air M4 (24 GB unified memory).
+The local backend (`local_backend/`) exposes one stable HTTP API and selects an engine at runtime:
 
-- **Transcription**: `mlx-community/whisper-large-v3-turbo` (~1.5 GB Metal RAM)
-- **Diarization**: `pyannote/speaker-diarization-3.1` (optional, needs `HF_TOKEN`)
+| Profile | Engine | Accelerator |
+|---------|--------|-------------|
+| `mac-mlx` | `mlx-whisper` | Apple Metal |
+| `nvidia-cuda` | `faster-whisper` / CTranslate2 | NVIDIA CUDA under Linux/WSL |
+| `windows-nvidia` | `faster-whisper` / CTranslate2 | Native Windows CUDA |
+| `universal-vulkan` | `whisper.cpp`, then Faster Whisper CPU fallback | Vulkan/ROCm or CPU |
+| `universal-cpu` | `faster-whisper` | CPU INT8 |
+
+`GET /health` reports the detected hardware, selected engine, device, model, compute type, fallback candidates, and diarization capability. Set `WHISPER_ENGINE` to override automatic selection.
+
+Speaker diarization is optional and installed separately because Pyannote and Torch are large:
+
+```bash
+local_backend/.venv/bin/pip install -r local_backend/requirements/diarization.txt
+```
+
+For AMD/Intel Vulkan, build `whisper.cpp` with `GGML_VULKAN=1`, then configure `WHISPER_CPP_BIN` and `WHISPER_CPP_MODEL`. AMD ROCm builds can use `GGML_HIP=1` and `WHISPER_ENGINE=rocm`.
 
 ## Output Format
 
@@ -97,6 +132,7 @@ The local backend (`local_backend/`) runs Whisper via [mlx-whisper](https://gith
 
 ```bash
 npm test
+cd local_backend && python3 -m unittest discover -s tests
 ```
 
 ## License

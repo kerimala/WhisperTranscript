@@ -49,6 +49,45 @@ export interface TranscriptionProviderInfo {
     configured: boolean;
 }
 
+export interface LocalRuntimeStatus {
+    running: boolean;
+    available: boolean;
+    status: 'ok' | 'unavailable';
+    requestedEngine: string;
+    selectedEngine: string | null;
+    recommendedProfile: string;
+    warning?: string | null;
+    hardware?: {
+        system: string;
+        machine: string;
+        is_wsl: boolean;
+        gpu?: {
+            vendor: string;
+            name: string;
+            memory_mb?: number | null;
+            compute_capability?: string | null;
+        } | null;
+    };
+    engine?: {
+        id: string;
+        display_name: string;
+        backend: string;
+        device: string;
+        accelerator: string;
+        model: string;
+        compute_type: string;
+    } | null;
+    candidates?: Array<{
+        id: string;
+        available: boolean;
+        reason?: string | null;
+    }>;
+    diarization?: {
+        available: boolean;
+        configured: boolean;
+    };
+}
+
 /**
  * Source file metadata in output
  */
@@ -76,6 +115,9 @@ export interface TranscriptionResult {
     source_file: SourceFile;
     provider: TranscriptionProviderName;
     model: string;
+    engine?: string;
+    accelerator?: string;
+    device?: string;
     language: string | null;
     segments: TranscriptSegment[];
     full_text: string;

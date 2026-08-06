@@ -337,7 +337,7 @@ class OpenAIDiarizeTranscriptionProvider implements TranscriptionProvider {
     }
 }
 
-class LocalMetalProvider implements TranscriptionProvider {
+class LocalBackendProvider implements TranscriptionProvider {
     name: TranscriptionProviderName = 'local';
     model = 'whisper-large-v3-turbo';
     private readonly backendUrl: string;
@@ -352,10 +352,13 @@ class LocalMetalProvider implements TranscriptionProvider {
         this.maxSpeakers = options.maxSpeakers ?? 10;
     }
 
-    async transcribe(file: File, _language?: string, signal?: AbortSignal): Promise<ChunkResult> {
+    async transcribe(file: File, language?: string, signal?: AbortSignal): Promise<ChunkResult> {
         console.log(`[provider:local] start ${describeFile(file)} model=${this.model} backend=${this.backendUrl}`);
         const form = new FormData();
         form.append('file', file);
+        if (language) {
+            form.append('language', language);
+        }
         if (this.hfToken) {
             form.append('hf_token', this.hfToken);
         }
@@ -440,7 +443,7 @@ export function getTranscriptionProviderInfo(name: TranscriptionProviderName): O
         case 'local':
             return {
                 name: 'local',
-                displayName: 'Local (Metal)',
+                displayName: 'Local (Auto)',
                 model: 'whisper-large-v3-turbo',
             };
         default:
@@ -486,7 +489,7 @@ export function createTranscriptionProvider(
     localOptions?: LocalProviderOptions
 ): TranscriptionProvider {
     if (name === 'local') {
-        return new LocalMetalProvider(localOptions);
+        return new LocalBackendProvider(localOptions);
     }
 
     const apiKey = (apiKeyOverride || getProviderApiKeyFromEnv(name) || '').trim();

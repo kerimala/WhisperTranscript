@@ -18,6 +18,7 @@ import {
     isTranscriptionError,
     RateLimitInfo,
     ChunkResult,
+    LocalRuntimeStatus,
 } from '@/lib/types';
 import {
     generateFileHash,
@@ -89,7 +90,7 @@ const FALLBACK_PROVIDERS: UIProviderInfo[] = [
     },
     {
         name: 'local',
-        displayName: 'Local (Metal)',
+        displayName: 'Local (Auto)',
         model: 'whisper-large-v3-turbo',
         configured: true,
     },
@@ -166,6 +167,7 @@ export default function Home() {
     const [localHfToken, setLocalHfToken] = useState('');
     const [hfTokenConfigured, setHfTokenConfigured] = useState(false);
     const [backendRunning, setBackendRunning] = useState<boolean | null>(null);
+    const [localRuntime, setLocalRuntime] = useState<LocalRuntimeStatus | null>(null);
     const [selectedLanguage, setSelectedLanguage] = useState('auto');
     const [history, setHistory] = useState<any[]>([]);
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -231,10 +233,16 @@ export default function Home() {
         async function checkHealth() {
             try {
                 const res = await fetch('/api/local-health');
-                const data = await res.json();
-                if (active) setBackendRunning(Boolean(data.running));
+                const data = await res.json() as LocalRuntimeStatus;
+                if (active) {
+                    setBackendRunning(Boolean(data.running));
+                    setLocalRuntime(data);
+                }
             } catch {
-                if (active) setBackendRunning(false);
+                if (active) {
+                    setBackendRunning(false);
+                    setLocalRuntime(null);
+                }
             }
         }
 
@@ -307,7 +315,7 @@ export default function Home() {
                 formData.append('language', selectedLanguage);
             }
 
-            // Local Metal provider extras
+            // Local runtime extras
             if (selectedProvider === 'local') {
                 if (localHfToken.trim()) {
                     formData.append('hfToken', localHfToken.trim());
@@ -597,7 +605,7 @@ export default function Home() {
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         <span>
-                                            OpenAI handles transcription and speaker diarization in the cloud, so your Mac does not run hot.
+                                            OpenAI handles transcription and speaker diarization in the cloud, so your local machine does not run hot.
                                             For very large files that are split on the server, speaker labels can restart between chunks.
                                         </span>
                                     </div>
@@ -615,12 +623,32 @@ export default function Home() {
                                                 Checking backend…
                                             </div>
                                         )}
-                                        {backendRunning === true && (
+                                        {backendRunning === true && localRuntime?.available !== false && (
                                             <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800 flex items-center gap-2">
                                                 <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                                 </svg>
-                                                Backend server is running
+                                                <span>
+                                                    Backend server is running
+                                                    {localRuntime?.engine && (
+                                                        <span className="block text-green-700 mt-0.5">
+                                                            {localRuntime.engine.display_name} · {localRuntime.engine.device} · {localRuntime.engine.compute_type}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {backendRunning === true && localRuntime?.available === false && (
+                                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1">
+                                                <div className="font-medium">Backend running, but no local engine is ready</div>
+                                                <p>
+                                                    Detected profile: <code className="font-mono font-semibold">{localRuntime.recommendedProfile}</code>
+                                                </p>
+                                                {localRuntime.candidates?.map(candidate => candidate.reason && (
+                                                    <p key={candidate.id} className="text-amber-800">
+                                                        <code className="font-mono">{candidate.id}</code>: {candidate.reason}
+                                                    </p>
+                                                ))}
                                             </div>
                                         )}
                                         {backendRunning === false && (
@@ -637,7 +665,10 @@ export default function Home() {
                                                         setBackendRunning(null);
                                                         fetch('/api/local-health')
                                                             .then(r => r.json())
-                                                            .then(d => setBackendRunning(Boolean(d.running)))
+                                                            .then((d: LocalRuntimeStatus) => {
+                                                                setBackendRunning(Boolean(d.running));
+                                                                setLocalRuntime(d);
+                                                            })
                                                             .catch(() => setBackendRunning(false));
                                                     }}
                                                     className="text-amber-700 underline hover:text-amber-900"
@@ -863,7 +894,7 @@ export default function Home() {
                             Selected provider:{' '}
                             {selectedProvider === 'local' ? (
                                 <span className="text-indigo-600 font-medium">
-                                    {activeProvider?.displayName || selectedProvider}
+                                    {localRuntime?.engine?.display_name || activeProvider?.displayName || selectedProvider}
                                 </span>
                             ) : (
                                 <a
@@ -877,7 +908,9 @@ export default function Home() {
                             )}
                             {' '}• Model:{' '}
                             <code className="px-1.5 py-0.5 bg-slate-100 rounded text-xs font-mono">
-                                {activeProvider?.model || 'whisper'}
+                                {selectedProvider === 'local'
+                                    ? localRuntime?.engine?.model || activeProvider?.model || 'whisper'
+                                    : activeProvider?.model || 'whisper'}
                             </code>
                         </p>
                     </div>

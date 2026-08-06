@@ -11,7 +11,11 @@ export async function GET(): Promise<NextResponse> {
         const res = await fetch(`${backendUrl}/health`, {
             signal: AbortSignal.timeout(2000),
         });
-        return NextResponse.json({ running: res.ok });
+        const runtime = await res.json().catch(() => ({}));
+        return NextResponse.json({
+            ...runtime,
+            running: res.ok,
+        });
     } catch {
         return NextResponse.json({ running: false });
     }
