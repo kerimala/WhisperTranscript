@@ -1,8 +1,6 @@
-mlx-whisper
-pyannote.audio>=3.1
-fastapi
-uvicorn[standard]
-python-multipart
-torch
-torchaudio
-numpy
+-r requirements/base.txt
+
+# Compatibility entry point. The launchers use a hardware-specific profile
+# from local_backend/requirements/ for optimized installations.
+mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"
+faster-whisper; sys_platform != "darwin" or platform_machine != "arm64"

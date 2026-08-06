@@ -1,0 +1,4 @@
+-r base.txt
+faster-whisper
+# Native Windows also needs CUDA 12 and cuDNN 9 DLLs on PATH. The Linux-only
+# nvidia-*-cu12 pip runtime packages are intentionally not installed here.

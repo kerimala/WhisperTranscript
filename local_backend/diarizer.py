@@ -27,8 +27,8 @@ def diarize(
             token=hf_token,
         )
         # Prefer NVIDIA CUDA on Windows/Linux, Apple Metal on macOS, then CPU.
-        # The diarization-only workflow never loads MLX Whisper, so the chosen
-        # accelerator is available exclusively to pyannote.
+        # Transcription is unloaded before diarization, so Pyannote can use the
+        # best accelerator without competing with the Whisper engine for VRAM.
         if torch.cuda.is_available():
             _pipeline.to(torch.device("cuda"))
         elif torch.backends.mps.is_available():
@@ -83,7 +83,7 @@ def unload_diarizer():
     gc.collect()
     
     # Explicitly clear Metal Performance Shaders (MPS) cache to instantly release GPU VRAM
-    if torch.backends.mps.is_available():
-        torch.mps.empty_cache()
-    elif torch.cuda.is_available():
+    if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    elif torch.backends.mps.is_available():
+        torch.mps.empty_cache()

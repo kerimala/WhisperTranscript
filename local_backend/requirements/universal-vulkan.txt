@@ -1,0 +1,4 @@
+-r base.txt
+faster-whisper
+# whisper.cpp itself is an external native binary. Configure it with
+# WHISPER_CPP_BIN and WHISPER_CPP_MODEL after building with GGML_VULKAN=1.

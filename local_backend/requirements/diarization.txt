@@ -1,0 +1,4 @@
+pyannote.audio>=3.1
+torch
+torchaudio
+huggingface-hub

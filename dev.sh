@@ -49,13 +49,35 @@ if [[ ! -d "$PROJECT_DIR/node_modules" ]]; then
     ok "npm dependencies installed"
 fi
 
-# ── 3. Set up Python backend ──────────────────────────────────────────────────
+# ── 3. Select the local inference profile ────────────────────────────────────
+PROFILE="${WHISPER_PROFILE:-auto}"
+if [[ "$PROFILE" == "auto" ]]; then
+    if command -v python3 &>/dev/null; then
+        PROFILE=$(python3 "$BACKEND_DIR/detect_profile.py" 2>/dev/null || printf 'universal-cpu')
+    else
+        PROFILE="universal-cpu"
+    fi
+fi
+
+case "$PROFILE" in
+    mac-mlx|nvidia-cuda|windows-nvidia|universal-cpu|universal-vulkan) ;;
+    *) die "Unknown WHISPER_PROFILE=$PROFILE" ;;
+esac
+
+REQUIREMENTS_FILE="$BACKEND_DIR/requirements/$PROFILE.txt"
+PROFILE_MARKER="$VENV/.installed-profile"
+info "Local runtime profile: $PROFILE"
+
+# ── 4. Set up Python backend ──────────────────────────────────────────────────
 # Re-install if requirements.txt changed since the venv was last built.
 NEEDS_INSTALL=false
 if [[ ! -f "$VENV/bin/uvicorn" ]]; then
     NEEDS_INSTALL=true
-elif [[ "$BACKEND_DIR/requirements.txt" -nt "$VENV/bin/uvicorn" ]]; then
-    info "requirements.txt changed – reinstalling packages …"
+elif [[ "$REQUIREMENTS_FILE" -nt "$VENV/bin/uvicorn" ]] \
+    || [[ "$BACKEND_DIR/requirements/base.txt" -nt "$VENV/bin/uvicorn" ]] \
+    || [[ ! -f "$PROFILE_MARKER" ]] \
+    || [[ "$(<"$PROFILE_MARKER")" != "$PROFILE" ]]; then
+    info "Runtime profile or requirements changed – reinstalling packages …"
     NEEDS_INSTALL=true
 fi
 
@@ -78,25 +100,39 @@ if $NEEDS_INSTALL; then
         "$PYTHON" -m venv "$VENV" || die "venv creation failed"
     fi
 
-    info "Installing Python requirements …"
+    info "Installing Python requirements for $PROFILE …"
+    if [[ "$PROFILE" == "nvidia-cuda" ]]; then
+        printf '%s⚠   CUDA runtime packages are large; this first install can download over 1 GB.%s\n' "$YELLOW" "$RESET"
+    fi
     "$VENV/bin/pip" install --quiet --upgrade pip
-    "$VENV/bin/pip" install --quiet -r "$BACKEND_DIR/requirements.txt" \
+    "$VENV/bin/pip" install --quiet -r "$REQUIREMENTS_FILE" \
         || die "pip install failed – see output above"
+    printf '%s' "$PROFILE" > "$PROFILE_MARKER"
 
     ok "Python backend is ready"
 else
     ok "Python backend already set up"
 fi
 
-# ── 4. HuggingFace token – read from .env.local and export to child processes ──
+# CTranslate2 needs the pip-installed CUDA libraries on its loader path.
+if [[ "$PROFILE" == "nvidia-cuda" ]]; then
+    CUDA_LIBRARY_PATH=$("$VENV/bin/python" -c 'import os, nvidia.cublas.lib, nvidia.cudnn.lib; print(os.path.dirname(nvidia.cublas.lib.__file__) + ":" + os.path.dirname(nvidia.cudnn.lib.__file__))') \
+        || die "Could not resolve the CUDA runtime libraries"
+    export LD_LIBRARY_PATH="$CUDA_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+# ── 5. HuggingFace token – read from .env.local and export to child processes ──
 if [[ -z "${HF_TOKEN:-}" ]] && [[ -f "$PROJECT_DIR/.env.local" ]]; then
     _hf_line=$(grep "^HF_TOKEN=" "$PROJECT_DIR/.env.local" 2>/dev/null | head -1)
     _hf_val="${_hf_line#HF_TOKEN=}"   # strip the key= prefix
     [[ -n "$_hf_val" ]] && export HF_TOKEN="$_hf_val"
 fi
 
-if [[ -n "${HF_TOKEN:-}" ]]; then
-    ok "HF_TOKEN found  (speaker diarization available)"
+if [[ -n "${HF_TOKEN:-}" ]] && "$VENV/bin/python" -c 'import pyannote.audio' 2>/dev/null; then
+    ok "HF_TOKEN and Pyannote found  (speaker diarization available)"
+elif [[ -n "${HF_TOKEN:-}" ]]; then
+    printf '%s⚠   HF_TOKEN found, but optional Pyannote dependencies are not installed.%s\n' "$YELLOW" "$RESET"
+    printf '    Install with: %s/bin/pip install -r %s/requirements/diarization.txt\n' "$VENV" "$BACKEND_DIR"
 else
     printf '%s⚠   HF_TOKEN not set – diarization disabled.%s\n' "$YELLOW" "$RESET"
     printf '    Add  HF_TOKEN=hf_…  to  .env.local  to enable it.\n'
@@ -107,7 +143,7 @@ printf '%s  Backend  →  http://127.0.0.1:8001%s\n' "$DIM" "$RESET"
 printf '%s  Frontend →  http://localhost:3000%s\n'  "$DIM" "$RESET"
 echo ""
 
-# ── 5. Start backend ──────────────────────────────────────────────────────────
+# ── 6. Start backend ──────────────────────────────────────────────────────────
 (
     cd "$BACKEND_DIR"
     "$VENV/bin/uvicorn" server:app --host 127.0.0.1 --port 8001 2>&1 \
@@ -119,7 +155,7 @@ echo ""
 # Give uvicorn a moment so its startup banner appears before Next.js floods output
 sleep 1
 
-# ── 6. Start frontend ─────────────────────────────────────────────────────────
+# ── 7. Start frontend ─────────────────────────────────────────────────────────
 (
     cd "$PROJECT_DIR"
     npm run dev 2>&1 \

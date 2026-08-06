@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# WhisperForFiles – Local Metal backend: setup & start
+# WhisperForFiles – Cross-platform local backend: setup & start
 #
 # Usage:  bash local_backend/setup_and_start.sh
 #         (run from the project root OR from inside local_backend/)
@@ -18,7 +18,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_DIR=".venv"
-REQUIREMENTS="requirements.txt"
 HOST="127.0.0.1"
 PORT=8001
 
@@ -30,7 +29,7 @@ fail() { echo -e "${RED}✗${RESET}  $*" >&2; exit 1; }
 
 echo ""
 echo "══════════════════════════════════════════════════════"
-echo "  WhisperForFiles – Local Metal backend"
+echo "  WhisperForFiles – Local auto-detected backend"
 echo "══════════════════════════════════════════════════════"
 echo ""
 
@@ -53,18 +52,30 @@ if [[ -z "$PYTHON" ]]; then
     fail "Python 3.10 or newer is required.\n   Install with:  brew install python@3.11"
 fi
 
-# ── 2. ffmpeg (needed for audio loading) ─────────────────────────────────────
+# ── 2. Select runtime profile ─────────────────────────────────────────────────
+PROFILE="${WHISPER_PROFILE:-auto}"
+if [[ "$PROFILE" == "auto" ]]; then
+    PROFILE=$("$PYTHON" "$SCRIPT_DIR/detect_profile.py")
+fi
+case "$PROFILE" in
+    mac-mlx|nvidia-cuda|windows-nvidia|universal-cpu|universal-vulkan) ;;
+    *) fail "Unknown WHISPER_PROFILE=$PROFILE" ;;
+esac
+REQUIREMENTS="requirements/$PROFILE.txt"
+ok "Runtime profile: $PROFILE"
+
+# ── 3. ffmpeg (needed for audio conversion and diarization) ──────────────────
 if command -v ffmpeg &>/dev/null; then
     ok "ffmpeg  ($(ffmpeg -version 2>&1 | head -1 | awk '{print $3}'))"
 else
     echo ""
     echo -e "${YELLOW}⚠${RESET}  ffmpeg not found."
-    echo "   Install with:  brew install ffmpeg"
+    echo "   Install with Homebrew (macOS) or your system package manager."
     echo "   (transcription will fail without it)"
     echo ""
 fi
 
-# ── 3. Create / reuse venv ────────────────────────────────────────────────────
+# ── 4. Create / reuse venv ────────────────────────────────────────────────────
 if [[ ! -d "$VENV_DIR" ]]; then
     info "Creating virtual environment at $SCRIPT_DIR/$VENV_DIR …"
     "$PYTHON" -m venv "$VENV_DIR"
@@ -76,8 +87,12 @@ fi
 PY="$VENV_DIR/bin/python"
 PIP="$VENV_DIR/bin/pip"
 
-# ── 4. Install / update requirements ─────────────────────────────────────────
+# ── 5. Install / update requirements ─────────────────────────────────────────
 info "Checking Python requirements …"
+
+if [[ "$PROFILE" == "nvidia-cuda" ]]; then
+    echo -e "${YELLOW}⚠${RESET}  CUDA runtime packages are large; the first install can download over 1 GB."
+fi
 
 # Use pip install with --upgrade only for the first install
 # Subsequent runs use --quiet so output is clean on repeat runs
@@ -89,11 +104,26 @@ else
     fail "pip install failed.  Check the output above for details."
 fi
 
-# ── 5. Quick sanity-check imports ─────────────────────────────────────────────
+printf '%s' "$PROFILE" > "$VENV_DIR/.installed-profile"
+
+if [[ "$PROFILE" == "nvidia-cuda" ]]; then
+    CUDA_LIBRARY_PATH=$("$PY" -c 'import os, nvidia.cublas.lib, nvidia.cudnn.lib; print(os.path.dirname(nvidia.cublas.lib.__file__) + ":" + os.path.dirname(nvidia.cudnn.lib.__file__))') \
+        || fail "Could not resolve the CUDA runtime libraries"
+    export LD_LIBRARY_PATH="$CUDA_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+# ── 6. Quick sanity-check imports ─────────────────────────────────────────────
 info "Verifying key imports …"
 IMPORT_ERRORS=0
 
-for pkg in fastapi uvicorn mlx_whisper; do
+REQUIRED_IMPORTS=(fastapi uvicorn)
+if [[ "$PROFILE" == "mac-mlx" ]]; then
+    REQUIRED_IMPORTS+=(mlx_whisper)
+elif [[ "$PROFILE" == "nvidia-cuda" || "$PROFILE" == "windows-nvidia" || "$PROFILE" == "universal-cpu" || "$PROFILE" == "universal-vulkan" ]]; then
+    REQUIRED_IMPORTS+=(faster_whisper)
+fi
+
+for pkg in "${REQUIRED_IMPORTS[@]}"; do
     if "$PY" -c "import $pkg" 2>/dev/null; then
         ok "  import $pkg"
     else
@@ -114,7 +144,7 @@ if [[ "$IMPORT_ERRORS" -gt 0 ]]; then
     fail "$IMPORT_ERRORS required package(s) failed to import.  See above."
 fi
 
-# ── 6. Check for HuggingFace token ───────────────────────────────────────────
+# ── 7. Check for HuggingFace token ───────────────────────────────────────────
 if [[ -n "${HF_TOKEN:-}" ]]; then
     ok "HF_TOKEN is set in the environment (diarization will work)"
 elif [[ -f "$SCRIPT_DIR/../.env.local" ]] && grep -q "^HF_TOKEN=" "$SCRIPT_DIR/../.env.local" 2>/dev/null; then
@@ -124,7 +154,7 @@ else
     echo "   you enter the token in the UI or add it to .env.local"
 fi
 
-# ── 7. Start server ───────────────────────────────────────────────────────────
+# ── 8. Start server ───────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}Starting server on http://${HOST}:${PORT}${RESET}"
 echo "Press Ctrl+C to stop."
