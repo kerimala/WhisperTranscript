@@ -18,6 +18,7 @@ import {
     isTranscriptionError,
     RateLimitInfo,
     ChunkResult,
+    TranscriptionResponse,
 } from '@/lib/types';
 import {
     generateFileHash,
@@ -26,6 +27,11 @@ import {
     clearProgress,
 } from '@/lib/transcription-cache';
 import { formatFileSize } from '@/utils/file-validation';
+import { estimateTranscriptionCost } from '@/lib/transcription-cost';
+import type {
+    TranscriptionProgressSnapshot,
+    TranscriptionProgressStage,
+} from '@/lib/transcription-progress';
 
 type AppState = 'idle' | 'processing' | 'complete' | 'error';
 type UIProviderName = TranscriptionProviderName | 'openai_diarize';
@@ -48,13 +54,21 @@ function isUIProviderName(value: string): value is UIProviderName {
 }
 
 interface ProcessingState {
+    jobId: string;
     fileName: string;
     fileSize: number;
     stage: 'uploading' | 'processing' | 'complete' | 'error';
-    progress: number;
+    uploadProgress?: number;
     message?: string;
-    currentChunk?: number;
+    serverStage?: TranscriptionProgressStage;
+    completedChunks?: number;
     totalChunks?: number;
+    activeWorkers?: number;
+    workerLimit?: number;
+    sourceDurationSeconds?: number;
+    providerName: UIProviderName;
+    providerModel: string;
+    startedAtMs: number;
     pipelinePlan?: PipelinePlan;
     currentPipelineStep?: PipelineStepId;
 }
@@ -151,6 +165,100 @@ function getProcessingMessage(step: PipelineStepId, provider: UIProviderName): s
     return 'Transcribing audio...';
 }
 
+function getPipelineStepForServerStage(
+    stage: TranscriptionProgressStage,
+    pipelinePlan: PipelinePlan
+): PipelineStepId {
+    if (stage === 'optimizing') return 'compress';
+    if (stage === 'splitting') return 'split';
+    if (stage === 'transcribing' || stage === 'complete' || stage === 'error') return 'transcribe';
+
+    return pipelinePlan.steps.some((step) => step.id === 'compress')
+        ? 'compress'
+        : 'transcribe';
+}
+
+function createProgressId(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+
+    return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 18)}`;
+}
+
+function readBrowserMediaDuration(file: File): Promise<number | null> {
+    return new Promise((resolve) => {
+        const media = document.createElement('video');
+        const objectUrl = URL.createObjectURL(file);
+        let settled = false;
+
+        const finish = (duration: number | null) => {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeout);
+            media.removeAttribute('src');
+            media.load();
+            URL.revokeObjectURL(objectUrl);
+            resolve(duration);
+        };
+
+        const timeout = window.setTimeout(() => finish(null), 12_000);
+        media.preload = 'metadata';
+        media.onloadedmetadata = () => {
+            finish(Number.isFinite(media.duration) && media.duration > 0 ? media.duration : null);
+        };
+        media.onerror = () => finish(null);
+        media.src = objectUrl;
+    });
+}
+
+interface TranscriptionHttpResponse {
+    status: number;
+    ok: boolean;
+    data: TranscriptionResponse;
+}
+
+function postTranscriptionWithUploadProgress(
+    formData: FormData,
+    onUploadProgress: (loaded: number, total: number) => void,
+    onUploadComplete: () => void,
+    requestRef: React.MutableRefObject<XMLHttpRequest | null>
+): Promise<TranscriptionHttpResponse> {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        requestRef.current = xhr;
+
+        xhr.open('POST', '/api/transcribe');
+        xhr.responseType = 'text';
+        xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable && event.total > 0) {
+                onUploadProgress(event.loaded, event.total);
+            }
+        };
+        xhr.upload.onload = () => onUploadComplete();
+        xhr.onerror = () => reject(new Error('The upload connection failed before transcription could start.'));
+        xhr.onabort = () => reject(new DOMException('Transcription cancelled.', 'AbortError'));
+        xhr.onload = () => {
+            const fallback: TranscriptionResponse = {
+                error: true,
+                message: xhr.status === 413
+                    ? 'This host rejected the original upload before it reached the transcription server. Use a local/self-hosted server for large media, or configure a direct object-storage upload for this hosted deployment.'
+                    : `The transcription server returned ${xhr.status} without a readable error message.`,
+            };
+
+            let data: TranscriptionResponse = fallback;
+            try {
+                data = JSON.parse(xhr.responseText) as TranscriptionResponse;
+            } catch {
+                // Keep the clear fallback message above.
+            }
+
+            resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, data });
+        };
+        xhr.send(formData);
+    });
+}
+
 export default function Home() {
     const [state, setState] = useState<AppState>('idle');
     const [processing, setProcessing] = useState<ProcessingState | null>(null);
@@ -175,10 +283,42 @@ export default function Home() {
     const [selectedLanguage, setSelectedLanguage] = useState('auto');
     const [history, setHistory] = useState<any[]>([]);
     const [browserUploadLimitBytes, setBrowserUploadLimitBytes] = useState<number | null>(null);
-    const abortControllerRef = useRef<AbortController | null>(null);
+    const [clockNowMs, setClockNowMs] = useState(() => Date.now());
+    const uploadRequestRef = useRef<XMLHttpRequest | null>(null);
+    const progressPollRef = useRef<number | null>(null);
 
     const providerOptions = providers.length > 0 ? providers : FALLBACK_PROVIDERS;
     const activeProvider = providerOptions.find(p => p.name === selectedProvider) || providerOptions[0];
+    const processingCost = processing
+        ? estimateTranscriptionCost({
+            provider: processing.providerName,
+            audioDurationSeconds: processing.sourceDurationSeconds,
+        })
+        : null;
+    const elapsedSeconds = state === 'processing' && processing
+        ? Math.max(0, Math.floor((clockNowMs - processing.startedAtMs) / 1000))
+        : 0;
+
+    const stopProgressPolling = useCallback(() => {
+        if (progressPollRef.current !== null) {
+            window.clearInterval(progressPollRef.current);
+            progressPollRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            uploadRequestRef.current?.abort();
+            stopProgressPolling();
+        };
+    }, [stopProgressPolling]);
+
+    useEffect(() => {
+        if (state !== 'processing' || !processing?.startedAtMs) return;
+
+        const interval = window.setInterval(() => setClockNowMs(Date.now()), 1_000);
+        return () => window.clearInterval(interval);
+    }, [state, processing?.startedAtMs]);
 
     useEffect(() => {
         let active = true;
@@ -295,6 +435,11 @@ export default function Home() {
         const fileHash = await generateFileHash(file);
         const progressKey = `${selectedProvider}:${fileHash}`;
         const pipelinePlan = buildPipelinePlan(file.size, selectedProvider);
+        const jobId = createProgressId();
+        const startedAtMs = Date.now();
+        const providerModel = activeProvider?.model || 'whisper';
+
+        stopProgressPolling();
 
         // Reset state
         setState('processing');
@@ -304,26 +449,41 @@ export default function Home() {
         setResumeMayDuplicateCharge(false);
         setPendingFile(file);
 
-        // Create abort controller for cancellation
-        abortControllerRef.current = new AbortController();
-
-        // Set initial processing state
+        // Upload percentages come from XMLHttpRequest.upload. Server work is
+        // reported independently, so we never manufacture a halfway value.
         setProcessing({
+            jobId,
             fileName: file.name,
             fileSize: file.size,
             stage: 'uploading',
-            progress: 10,
+            uploadProgress: 0,
             message: getProcessingMessage('upload', selectedProvider),
-            currentChunk: resumeData ? resumeData.skipChunks.length : 0,
+            completedChunks: resumeData ? resumeData.skipChunks.length : 0,
             totalChunks: resumeData ? resumeData.skipChunks.length + 1 : undefined, // Will be updated
+            activeWorkers: 0,
+            providerName: selectedProvider,
+            providerModel,
+            startedAtMs,
             pipelinePlan,
             currentPipelineStep: 'upload',
+        });
+
+        // Metadata reads do not delay the upload. When a browser can determine
+        // duration locally, the cost card becomes useful immediately; the
+        // server may later replace it with its ffprobe measurement.
+        void readBrowserMediaDuration(file).then((sourceDurationSeconds) => {
+            if (sourceDurationSeconds === null) return;
+            setProcessing((previous) => previous?.jobId === jobId
+                ? { ...previous, sourceDurationSeconds }
+                : previous);
         });
 
         try {
             // Create form data
             const formData = new FormData();
-            formData.append('file', file);
+            // Send this first so the server can associate its eventual phase
+            // updates with the browser before the media stream is complete.
+            formData.append('progressId', jobId);
             formData.append('provider', selectedProvider);
             if (providerApiKey.trim()) {
                 formData.append('apiKey', providerApiKey.trim());
@@ -346,45 +506,88 @@ export default function Home() {
                 formData.append('previousResults', JSON.stringify(resumeData.previousResults));
                 formData.append('durationOffset', resumeData.durationOffset.toString());
             }
+            // Keep the large streaming field last. Busboy receives the
+            // progress ID before it starts writing the media to disk.
+            formData.append('file', file);
 
-            // Simulate upload progress
-            setProcessing(prev => prev ? {
-                ...prev,
-                progress: 30,
-                message: getProcessingMessage('upload', selectedProvider),
-                currentPipelineStep: 'upload',
-            } : null);
-
-            // Make API request
             const firstServerStep: PipelineStepId =
                 pipelinePlan.steps.some((step) => step.id === 'compress') ? 'compress' : 'transcribe';
-            setProcessing(prev => prev ? {
-                ...prev,
-                stage: 'processing',
-                progress: 50,
-                message: getProcessingMessage(firstServerStep, selectedProvider),
-                currentPipelineStep: firstServerStep,
-            } : null);
 
-            const response = await fetch('/api/transcribe', {
-                method: 'POST',
-                body: formData,
-                signal: abortControllerRef.current.signal,
-            });
+            const applyServerProgress = (snapshot: TranscriptionProgressSnapshot) => {
+                setProcessing((previous) => {
+                    if (!previous || previous.jobId !== jobId) return previous;
+                    const stage = snapshot.stage === 'complete'
+                        ? 'complete'
+                        : snapshot.stage === 'error'
+                            ? 'error'
+                            : 'processing';
+                    return {
+                        ...previous,
+                        stage,
+                        serverStage: snapshot.stage,
+                        message: snapshot.message,
+                        providerName: isUIProviderName(snapshot.provider || '')
+                            ? snapshot.provider as UIProviderName
+                            : previous.providerName,
+                        providerModel: snapshot.model || previous.providerModel,
+                        completedChunks: snapshot.completedChunks,
+                        totalChunks: snapshot.totalChunks,
+                        activeWorkers: snapshot.activeWorkers,
+                        workerLimit: snapshot.workerLimit,
+                        sourceDurationSeconds: snapshot.sourceDurationSeconds ?? previous.sourceDurationSeconds,
+                        currentPipelineStep: getPipelineStepForServerStage(snapshot.stage, pipelinePlan),
+                    };
+                });
+            };
 
-            setProcessing(prev => prev ? {
-                ...prev,
-                progress: 80,
-                message: getProcessingMessage('transcribe', selectedProvider),
-                currentPipelineStep: 'transcribe',
-            } : null);
+            const pollProgress = async () => {
+                try {
+                    const progressResponse = await fetch(`/api/transcribe/progress?id=${encodeURIComponent(jobId)}`, {
+                        cache: 'no-store',
+                    });
+                    if (!progressResponse.ok) return;
+                    const snapshot = await progressResponse.json() as TranscriptionProgressSnapshot;
+                    if (snapshot.id === jobId) applyServerProgress(snapshot);
+                } catch {
+                    // The upload request is the source of truth. A brief polling
+                    // miss must not turn a viable transcription into an error.
+                }
+            };
+            void pollProgress();
+            progressPollRef.current = window.setInterval(() => {
+                void pollProgress();
+            }, 700);
 
-            const data = await response.json().catch(() => ({
-                error: true,
-                message: response.status === 413
-                    ? 'This host rejected the original upload before it reached the transcription server. Use a local/self-hosted server for large media, or configure a direct object-storage upload for this hosted deployment.'
-                    : `The transcription server returned ${response.status} without a readable error message.`,
-            }));
+            const response = await postTranscriptionWithUploadProgress(
+                formData,
+                (loaded, total) => {
+                    const uploadProgress = Math.min(100, Math.round((loaded / total) * 100));
+                    setProcessing((previous) => previous?.jobId === jobId
+                        ? {
+                            ...previous,
+                            stage: 'uploading',
+                            uploadProgress,
+                            message: `Uploading ${formatFileSize(loaded)} of ${formatFileSize(total)}…`,
+                            currentPipelineStep: 'upload',
+                        }
+                        : previous);
+                },
+                () => {
+                    setProcessing((previous) => previous?.jobId === jobId
+                        ? {
+                            ...previous,
+                            stage: 'processing',
+                            uploadProgress: 100,
+                            message: 'Upload complete. Waiting for the server…',
+                            currentPipelineStep: firstServerStep,
+                        }
+                        : previous);
+                },
+                uploadRequestRef
+            );
+            uploadRequestRef.current = null;
+            stopProgressPolling();
+            const data = response.data;
 
             if (isTranscriptionError(data)) {
                 // Check for rate limit with partial results
@@ -424,10 +627,11 @@ export default function Home() {
 
                     setProcessing(prev => prev ? {
                         ...prev,
-                        currentChunk: partial.completedChunks.length,
+                        completedChunks: partial.completedChunks.length,
                         totalChunks: partial.totalChunks,
-                        currentPipelineStep: 'split',
-                        message: 'Chunked processing in progress...',
+                        activeWorkers: 0,
+                        currentPipelineStep: 'transcribe',
+                        message: `Saved ${partial.completedChunks.length} of ${partial.totalChunks} chunks for resume.`,
                     } : null);
                 }
 
@@ -448,9 +652,12 @@ export default function Home() {
             setProcessing(prev => prev ? {
                 ...prev,
                 stage: 'complete',
-                progress: 100,
                 message: backendSummary || 'Transcription complete!',
+                serverStage: 'complete',
+                completedChunks: prev.totalChunks || 1,
+                activeWorkers: 0,
                 currentPipelineStep: 'transcribe',
+                sourceDurationSeconds: data.preparation?.source_duration_seconds ?? prev.sourceDurationSeconds,
             } : null);
 
             // Small delay to show completion
@@ -460,6 +667,8 @@ export default function Home() {
             setState('complete');
             setProcessing(null);
         } catch (error) {
+            stopProgressPolling();
+            uploadRequestRef.current = null;
             if (error instanceof Error && error.name === 'AbortError') {
                 // User cancelled - reset to idle
                 setState('idle');
@@ -470,9 +679,16 @@ export default function Home() {
             const message = error instanceof Error ? error.message : 'An unexpected error occurred';
             setErrorMessage(message);
             setState('error');
-            setProcessing(prev => prev ? { ...prev, stage: 'error', message, progress: 0 } : null);
+            setProcessing(prev => prev ? { ...prev, stage: 'error', message, activeWorkers: 0 } : null);
         }
-    }, [providerApiKeys, selectedProvider, localHfToken, selectedLanguage]);
+    }, [
+        activeProvider?.model,
+        localHfToken,
+        providerApiKeys,
+        selectedLanguage,
+        selectedProvider,
+        stopProgressPolling,
+    ]);
 
     // Handle fresh file selection
     const handleFileSelect = useCallback(async (file: File) => {
@@ -546,12 +762,15 @@ export default function Home() {
     }, [pendingFile, resumeState, processTranscription]);
 
     const handleCancel = useCallback(() => {
-        abortControllerRef.current?.abort();
+        uploadRequestRef.current?.abort();
+        uploadRequestRef.current = null;
+        stopProgressPolling();
         setState('idle');
         setProcessing(null);
-    }, []);
+    }, [stopProgressPolling]);
 
     const handleReset = useCallback(() => {
+        stopProgressPolling();
         setState('idle');
         setResult(null);
         setProcessing(null);
@@ -561,7 +780,7 @@ export default function Home() {
         setResumeState(null);
         setResumeMayDuplicateCharge(false);
         setPendingFile(null);
-    }, []);
+    }, [stopProgressPolling]);
 
     return (
         <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
@@ -791,10 +1010,17 @@ export default function Home() {
                                 fileName={processing.fileName}
                                 fileSize={processing.fileSize}
                                 stage={processing.stage}
-                                progress={processing.progress}
+                                uploadProgress={processing.uploadProgress}
+                                serverStage={processing.serverStage}
                                 message={processing.message}
-                                currentChunk={processing.currentChunk}
+                                completedChunks={processing.completedChunks}
                                 totalChunks={processing.totalChunks}
+                                activeWorkers={processing.activeWorkers}
+                                workerLimit={processing.workerLimit}
+                                providerName={processing.providerName}
+                                providerModel={processing.providerModel}
+                                elapsedSeconds={elapsedSeconds}
+                                costEstimate={processingCost!}
                                 pipelineSummary={processing.pipelinePlan?.summary}
                                 pipelineSteps={processing.pipelinePlan?.steps}
                                 currentPipelineStep={processing.currentPipelineStep}

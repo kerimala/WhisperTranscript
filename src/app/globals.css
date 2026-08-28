@@ -63,6 +63,17 @@ body {
   50% { opacity: 0.5; }
 }
 
+/* Used only while a server phase has no truthful numeric completion value. */
+.progress-indeterminate {
+  width: 38%;
+  animation: progress-signal 1.35s ease-in-out infinite;
+}
+
+@keyframes progress-signal {
+  0% { transform: translateX(-115%); }
+  100% { transform: translateX(285%); }
+}
+
 /* Focus styles for accessibility */
 *:focus-visible {
   outline: 2px solid #667eea;
@@ -92,4 +103,20 @@ body {
 /* Selection color */
 ::selection {
   background: rgba(102, 126, 234, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .gradient-text,
+  .pulse-ring,
+  .progress-indeterminate {
+    animation: none;
+  }
+
+  .progress-indeterminate {
+    transform: translateX(82%);
+  }
 }

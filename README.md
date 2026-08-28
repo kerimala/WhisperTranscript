@@ -65,6 +65,7 @@ All keys are optional at install time. Configure at least one transcription prov
 | `AI_ANALYSIS_PROVIDER` | `kimi` or `deepseek` |
 | `MAX_SOURCE_UPLOAD_BYTES` | Self-hosted staged-upload cap; defaults to 10 GiB |
 | `MAX_BROWSER_UPLOAD_BYTES` | Optional lower reverse-proxy ingress limit shown by the UI |
+| `OPENAI_DIARIZE_CHUNK_CONCURRENCY` | Split-job worker count for OpenAI diarization; `1`–`4`, defaults to `2` |
 
 Do not commit `.env.local`; it is ignored by Git.
 
@@ -82,6 +83,8 @@ Do not commit `.env.local`; it is ignored by Git.
 On a local or self-hosted Node.js server, the original upload is streamed to a private temporary directory rather than held in memory. Ensure the machine has enough temporary disk space for the source file and converted audio. The default source-upload cap is 10 GiB.
 
 Vercel Functions reject request bodies above 4.5 MB before this route executes. A Vercel deployment therefore needs direct object-storage uploads and a separate media-processing worker for large recordings; changing a Next.js body-size setting does not bypass that platform limit.
+
+Split jobs use up to four concurrent workers for Groq and standard OpenAI transcription. OpenAI diarization also runs concurrently by default (two workers); set `OPENAI_DIARIZE_CHUNK_CONCURRENCY=1` for the previous sequential behavior, or up to `4` for more throughput. The cap limits how many billable requests can be in flight. On a network failure, completed chunks remain resumable, but the failed and any in-flight chunks may need to be submitted again.
 
 ## Development and verification
 

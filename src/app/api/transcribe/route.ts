@@ -54,6 +54,11 @@ import {
     getProviderApiKeyFromEnv,
     isValidTranscriptionProvider,
 } from '@/lib/transcription-providers';
+import {
+    startTranscriptionProgress,
+    updateTranscriptionProgress,
+    type TranscriptionProgressUpdate,
+} from '@/lib/transcription-progress';
 
 /**
  * Create an error response
@@ -209,6 +214,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
     const requestId = randomUUID().slice(0, 8);
     let tempDir: string | null = null;
     let splitTempDir: string | null = null;
+    let reportProgress: ((update: TranscriptionProgressUpdate) => void) | null = null;
     const startedAt = Date.now();
     const log = (message: string) => console.log(`[transcribe:${requestId}] ${message}`);
     const warn = (message: string) => console.warn(`[transcribe:${requestId}] ${message}`);
@@ -225,6 +231,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         const providerRaw = getField('provider') ?? 'groq';
         const providerName = providerRaw.toLowerCase().trim();
         const apiKeyOverride = getField('apiKey')?.trim() || undefined;
+        const progressId = getField('progressId');
+        if (progressId) {
+            startTranscriptionProgress(progressId, {
+                stage: 'received',
+                message: 'File received by server. Preparing transcription…',
+                provider: providerName,
+            });
+            reportProgress = (update) => {
+                updateTranscriptionProgress(progressId, update);
+            };
+        }
         log(`request received provider=${providerName} language=${language || 'auto'} file="${file.name}" size=${formatMiB(file.size)}`);
 
         // Local provider: proxy straight to Python backend and return its response
@@ -245,6 +262,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
 
             let backendRes: Response;
             try {
+                reportProgress?.({
+                    stage: 'transcribing',
+                    message: 'Transcribing on your local backend…',
+                    provider: 'local',
+                    activeWorkers: 1,
+                    workerLimit: 1,
+                    totalChunks: 1,
+                    completedChunks: 0,
+                });
                 log(`forwarding to local backend url=${backendUrl} hf_token=${hfToken ? 'provided' : 'env/none'} speakers=${minSpeakers}-${maxSpeakers}`);
                 // 30-minute timeout — local transcription of long audio files
                 // can take 10-15+ minutes on a MacBook Air.
@@ -260,12 +286,22 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
                 if (msg.includes('TimeoutError') || msg.includes('timed out') || msg.includes('abort')) {
                     warn(`local backend timeout after ${(Date.now() - startedAt) / 1000}s`);
+                    reportProgress?.({
+                        stage: 'error',
+                        message: 'The local transcription timed out.',
+                        activeWorkers: 0,
+                    });
                     return errorResponse(
                         'Local backend timed out. The audio file may be too long for available memory.',
                         504
                     );
                 }
                 warn(`local backend unreachable message="${msg}"`);
+                reportProgress?.({
+                    stage: 'error',
+                    message: 'The local backend could not be reached.',
+                    activeWorkers: 0,
+                });
                 return errorResponse(
                     'Could not reach local backend. Make sure the server is running: cd local_backend && bash start.sh',
                     503
@@ -293,9 +329,24 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 await fs.writeFile(filePath, JSON.stringify(jsonResult, null, 2), 'utf-8');
                 log(`saved local result file="${filePath}"`);
 
+                reportProgress?.({
+                    stage: backendRes.ok ? 'complete' : 'error',
+                    message: backendRes.ok ? 'Transcription complete.' : 'The local backend returned an error.',
+                    activeWorkers: 0,
+                    totalChunks: 1,
+                    completedChunks: backendRes.ok ? 1 : 0,
+                });
+
                 return NextResponse.json(jsonResult, { status: backendRes.status });
             } catch (err) {
                 warn(`failed to save or parse local result: ${err instanceof Error ? err.message : String(err)}`);
+                reportProgress?.({
+                    stage: backendRes.ok ? 'complete' : 'error',
+                    message: backendRes.ok ? 'Transcription complete.' : 'The local backend returned an error.',
+                    activeWorkers: 0,
+                    totalChunks: 1,
+                    completedChunks: backendRes.ok ? 1 : 0,
+                });
                 return new NextResponse(bodyText, {
                     status: backendRes.status,
                     headers: {
@@ -336,6 +387,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
 
         const provider = createTranscriptionProvider(providerName, apiKeyOverride);
         const startTime = new Date();
+        reportProgress?.({
+            stage: 'received',
+            message: 'File received by server. Preparing transcription…',
+            provider: provider.name,
+            model: provider.model,
+        });
         log(`provider ready name=${provider.name} model=${provider.model}`);
 
         const sizeRequiresPreparation = needsAudioSplitting(file.size);
@@ -348,6 +405,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
             );
 
             try {
+                reportProgress?.({
+                    stage: 'optimizing',
+                    message: 'Optimizing audio on the server…',
+                    provider: provider.name,
+                    model: provider.model,
+                });
                 const optimized = await optimizeAudioForTranscription(file.path, file.name);
                 const preparedPath = optimized.outputPath;
                 const preparedName = optimized.outputFileName;
@@ -375,6 +438,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 if (!splitForSize && !splitForDuration) {
                     log(`prepared file fits direct upload; sending single request`);
                     const preparedFile = await readSegmentAsFile(preparedPath, preparedMimeType);
+                    reportProgress?.({
+                        stage: 'transcribing',
+                        message: 'Transcribing audio…',
+                        totalChunks: 1,
+                        completedChunks: 0,
+                        activeWorkers: 1,
+                        workerLimit: 1,
+                        ...(preparedDurationSec !== null ? { sourceDurationSeconds: preparedDurationSec } : {}),
+                    });
                     const result = await provider.transcribe(
                         preparedFile,
                         language || undefined,
@@ -420,6 +492,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
 
                     await cleanupTempFiles(tempDir);
                     tempDir = null;
+                    reportProgress?.({
+                        stage: 'complete',
+                        message: 'Transcription complete.',
+                        totalChunks: 1,
+                        completedChunks: 1,
+                        activeWorkers: 0,
+                        workerLimit: 1,
+                        ...(preparedDurationSec !== null ? { sourceDurationSeconds: preparedDurationSec } : {}),
+                    });
                     log(`request complete duration_ms=${Date.now() - startedAt} segments=${transcriptionResult.segments.length}`);
                     return NextResponse.json(transcriptionResult);
                 }
@@ -433,12 +514,20 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                     `prepared file requires splitting reason=${splitReason} ` +
                     `size=${formatMiB(optimized.finalSizeBytes)} duration_seconds=${preparedDurationSec?.toFixed(1) ?? 'not_checked'}`
                 );
+                reportProgress?.({
+                    stage: 'splitting',
+                    message: 'Splitting audio into provider-safe chunks…',
+                    ...(preparedDurationSec !== null ? { sourceDurationSeconds: preparedDurationSec } : {}),
+                });
                 const splitResult = await splitAudioFile(
                     preparedPath,
                     preparedName,
                     providerDurationLimit ?? undefined
                 );
                 splitTempDir = splitResult.tempDir;
+                const sourceDurationSeconds = preparedDurationSec ?? (
+                    splitResult.segments.reduce((total, segment) => total + (segment.durationMs || 0), 0) / 1000
+                );
 
                 log(`split ready chunks=${splitResult.segments.length}`);
 
@@ -471,16 +560,36 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                     return true;
                 });
 
-                // Diarization requests can take several minutes and are billable.
-                // Process them sequentially so a transient failure cannot discard
-                // or abort another in-flight paid chunk.
+                // Diarization uses bounded parallelism to improve large jobs. A
+                // failure preserves completed peers and stops new work; already
+                // in-flight provider calls may still finish.
                 const chunkConcurrency = getChunkConcurrency(
                     provider.name,
                     pendingSegments.length,
-                    MAX_PARALLEL_CHUNK_TRANSCRIPTIONS
+                    MAX_PARALLEL_CHUNK_TRANSCRIPTIONS,
+                    process.env.OPENAI_DIARIZE_CHUNK_CONCURRENCY
                 );
                 let nextSegmentCursor = 0;
                 let firstChunkError: ChunkFailure | null = null;
+                let activeWorkers = 0;
+                let completedChunkCount = resultsByIndex.size;
+
+                const reportChunkProgress = (message: string): void => {
+                    reportProgress?.({
+                        stage: 'transcribing',
+                        message,
+                        totalChunks: splitResult.segments.length,
+                        completedChunks: completedChunkCount,
+                        activeWorkers,
+                        workerLimit: chunkConcurrency,
+                        ...(sourceDurationSeconds > 0 ? { sourceDurationSeconds } : {}),
+                    });
+                };
+                reportChunkProgress(
+                    completedChunkCount > 0
+                        ? `Resuming transcription: ${completedChunkCount}/${splitResult.segments.length} chunks already complete.`
+                        : `Starting ${splitResult.segments.length}-chunk transcription.`
+                );
 
                 log(
                     `chunk execution mode=${chunkConcurrency === 1 ? 'sequential' : 'parallel'} concurrency=${chunkConcurrency} ` +
@@ -502,6 +611,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
 
                             const segmentStartOffsetMs = segment.startOffsetMs;
                             const segmentEndOffsetMs = segmentStartOffsetMs + (segment.durationMs || 0);
+                            activeWorkers += 1;
+                            reportChunkProgress(
+                                `Transcribing chunk ${segment.index + 1} of ${splitResult.segments.length}…`
+                            );
 
                             try {
                                 log(
@@ -529,6 +642,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                                     segments: adjustedSegments,
                                     language: result.language,
                                 });
+                                completedChunkCount = resultsByIndex.size;
+                                activeWorkers = Math.max(0, activeWorkers - 1);
+                                reportChunkProgress(
+                                    `Completed ${completedChunkCount} of ${splitResult.segments.length} chunks.`
+                                );
 
                                 log(
                                     `chunk complete index=${segment.index + 1}/${splitResult.segments.length} ` +
@@ -536,6 +654,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                                 );
                             } catch (chunkError) {
                                 const errorMsg = chunkError instanceof Error ? chunkError.message : 'Chunk processing failed';
+                                activeWorkers = Math.max(0, activeWorkers - 1);
+                                reportChunkProgress('A chunk needs attention; preserving completed work…');
 
                                 if (!firstChunkError) {
                                     firstChunkError = {
@@ -587,6 +707,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                             tempDir = null;
                         }
 
+                        reportProgress?.({
+                            stage: 'error',
+                            message: `Paused after ${completedChunks.length} of ${splitResult.segments.length} chunks.`,
+                            totalChunks: splitResult.segments.length,
+                            completedChunks: completedChunks.length,
+                            activeWorkers: 0,
+                            workerLimit: chunkConcurrency,
+                            ...(sourceDurationSeconds > 0 ? { sourceDurationSeconds } : {}),
+                        });
+
                         return errorResponse(retryMsg, 429, {
                             rateLimit: rateLimit || undefined,
                             partialResult,
@@ -611,6 +741,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                         await cleanupTempFiles(tempDir);
                         tempDir = null;
                     }
+
+                    reportProgress?.({
+                        stage: 'error',
+                        message: `Stopped after ${completedChunks.length} of ${splitResult.segments.length} chunks.`,
+                        totalChunks: splitResult.segments.length,
+                        completedChunks: completedChunks.length,
+                        activeWorkers: 0,
+                        workerLimit: chunkConcurrency,
+                        ...(sourceDurationSeconds > 0 ? { sourceDurationSeconds } : {}),
+                    });
 
                     return errorResponse(failureMessage, isNetworkFailure ? 502 : 500, {
                         ...(completedChunks.length > 0 ? { partialResult } : {}),
@@ -668,6 +808,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                     warn(`failed to save result automatically: ${err instanceof Error ? err.message : String(err)}`);
                 }
 
+                reportProgress?.({
+                    stage: 'complete',
+                    message: 'Transcription complete.',
+                    totalChunks: splitResult.segments.length,
+                    completedChunks: splitResult.segments.length,
+                    activeWorkers: 0,
+                    workerLimit: chunkConcurrency,
+                    ...(sourceDurationSeconds > 0 ? { sourceDurationSeconds } : {}),
+                });
                 log(`request complete duration_ms=${Date.now() - startedAt} chunks=${splitResult.segments.length} segments=${transcriptionResult.segments.length}`);
                 return NextResponse.json(transcriptionResult);
             } catch (ffmpegError) {
@@ -698,6 +847,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         // preparation threshold), so materializing this staged file here does
         // not reintroduce the multi-gigabyte memory problem.
         const directFile = await readSegmentAsFile(file.path, file.type || 'audio/mpeg');
+        reportProgress?.({
+            stage: 'transcribing',
+            message: 'Transcribing audio…',
+            totalChunks: 1,
+            completedChunks: 0,
+            activeWorkers: 1,
+            workerLimit: 1,
+        });
         const result = await provider.transcribe(directFile, language || undefined, request.signal);
         const createdAt = startTime.toISOString();
         const diarizedText = buildDiarizedText(result.segments, createdAt, provider.name, provider.model);
@@ -731,6 +888,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
             await cleanupTempFiles(tempDir);
             tempDir = null;
         }
+        reportProgress?.({
+            stage: 'complete',
+            message: 'Transcription complete.',
+            totalChunks: 1,
+            completedChunks: 1,
+            activeWorkers: 0,
+            workerLimit: 1,
+        });
         log(`request complete duration_ms=${Date.now() - startedAt} segments=${transcriptionResult.segments.length}`);
         return NextResponse.json(transcriptionResult);
     } catch (error) {
@@ -754,6 +919,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         console.error(`[transcribe:${requestId}] unhandled error:`, error);
 
         const message = error instanceof Error ? error.message : 'Transcription failed';
+        reportProgress?.({
+            stage: 'error',
+            message: message.includes('cancelled') ? 'Transcription cancelled.' : 'Transcription stopped on the server.',
+            activeWorkers: 0,
+        });
 
         if (message.includes('cancelled')) {
             return errorResponse('Transcription was cancelled', 499);
