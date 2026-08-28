@@ -788,7 +788,7 @@ export async function GET(): Promise<NextResponse> {
     const browserUploadLimitBytes = getBrowserUploadLimitBytes();
     const defaultProvider: TranscriptionProviderName = providers.find(
         (provider) => provider.configured && provider.name !== 'local'
-    )?.name || 'local';
+    )?.name || (process.platform === 'darwin' ? 'local' : 'groq');
 
     return NextResponse.json({
         name: 'Whisper Transcription API',

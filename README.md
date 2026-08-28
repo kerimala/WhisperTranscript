@@ -1,110 +1,95 @@
-# Whisper For Files
+# WhisperForFiles
 
-A production-ready transcription web app with selectable Whisper providers — cloud (Groq, OpenAI) or fully local on Apple Silicon.
+Self-hosted audio and video transcription with Groq, OpenAI, or an optional Apple Silicon local backend. Large uploads are streamed to temporary disk, converted to speech-oriented audio, and split into provider-safe chunks.
 
-## Features
+## What it supports
 
-- 🎙️ **Audio Transcription** — Convert audio files to text using Whisper
-- 🔀 **Provider Selection** — Choose Groq, OpenAI, or Local (Metal) in the UI
-- 🍎 **Local Mode** — Runs entirely on-device via MLX on Apple Silicon (no API key needed)
-- 🗣️ **Speaker Diarization** — Identify who said what (local mode, requires HuggingFace token)
-- 📁 **Multiple Formats** — flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm
-- 📊 **Structured Output** — JSON with segments, timestamps, and metadata
-- 🔄 **Large media support** — Self-hosted servers stream uploads to disk, then optimize and split them with ffmpeg
-- 🤖 **AI Analysis** — Summarize, extract tasks, or key points (Kimi / DeepSeek)
-- 🎨 **Modern UI** — Clean, responsive design with progress tracking
+- Audio and video files: FLAC, MP3, MP4, MPEG, M4A, OGG, WAV, WebM, MOV, AAC, and related browser MIME variants
+- Fast Groq transcription with timestamps
+- OpenAI Whisper and OpenAI speaker diarization
+- Local MLX Whisper with optional pyannote diarization on Apple Silicon
+- Resumable chunk processing after rate-limit or network failures
+- JSON, text, diarized text, and AI-assisted summaries
 
-## Prerequisites
+## Windows installation
 
-- **Node.js 18+**
-- **ffmpeg** — Required for audio processing
-- **Python 3.10+** — Only needed for local transcription mode
+Windows uses the cloud providers. The local Metal/MLX backend is Apple Silicon-only.
 
-### Installing ffmpeg (macOS)
+1. Download or extract the complete project folder.
+2. Double-click `Install-WhisperForFiles-Windows.cmd`.
+3. Allow the installer to add Node.js LTS and FFmpeg through WinGet if they are missing.
+4. Add a free Groq API key to `.env.local`, or paste it into the app when prompted.
+5. Double-click `Start-WhisperForFiles-Windows.cmd` or use the Desktop shortcut.
+
+The installer runs `npm ci`, creates a blank `.env.local` without overwriting an existing one, builds the production app, and creates a Desktop shortcut. It requires Windows 10/11 with PowerShell and WinGet. The app listens only on `127.0.0.1:3000`.
+
+Groq keys are available at [console.groq.com/keys](https://console.groq.com/keys). Groq currently provides transcription and timestamps, but not hosted speaker diarization.
+
+## macOS installation
+
+### Apple Silicon local transcription
+
+Install FFmpeg, then start the combined Python and Next.js services:
 
 ```bash
 brew install ffmpeg
-```
-
-## Quick Start
-
-### Option 1: Local transcription (recommended for Apple Silicon)
-
-```bash
-# One command starts both backend + frontend:
 bash dev.sh
 ```
 
-This will:
-1. Set up a Python venv and install dependencies (first run only)
-2. Start the Metal-accelerated Whisper backend on port 8001
-3. Start the Next.js frontend on port 3000
+The first run creates the Python environment and downloads the local model dependencies. Add `HF_TOKEN` to `.env.local` to enable pyannote speaker diarization.
 
-### Option 2: Cloud-only
+### Cloud-only on macOS or Linux
+
+Node.js 20.9 or newer and FFmpeg are required.
 
 ```bash
-npm install
+npm ci
 cp .env.example .env.local
-# Add your GROQ_API_KEY and/or OPENAI_API_KEY to .env.local
-npm run dev
+npm run build
+npm run start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to use the app.
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
-## Environment Variables
+## Configuration
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GROQ_API_KEY` | For Groq | API key from [console.groq.com/keys](https://console.groq.com/keys) |
-| `OPENAI_API_KEY` | For OpenAI | API key from [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
-| `HF_TOKEN` | For diarization | HuggingFace token for speaker diarization ([pyannote access](https://huggingface.co/pyannote/speaker-diarization-3.1)) |
-| `KIMI_API_KEY` | For AI analysis | Kimi K2.5 API key |
-| `DEEPSEEK_API_KEY` | For AI analysis | DeepSeek API key |
-| `AI_ANALYSIS_PROVIDER` | Optional | Default AI provider: `kimi` or `deepseek` |
+All keys are optional at install time. Configure at least one transcription provider in `.env.local`, or paste its key into the UI for the current browser session.
 
-## Large uploads and hosting
+| Variable | Purpose |
+| --- | --- |
+| `GROQ_API_KEY` | Groq cloud transcription |
+| `OPENAI_API_KEY` | OpenAI Whisper and OpenAI diarization |
+| `HF_TOKEN` | Local pyannote diarization on Apple Silicon |
+| `KIMI_API_KEY` | Optional AI analysis with Kimi |
+| `DEEPSEEK_API_KEY` | Optional AI analysis with DeepSeek |
+| `AI_ANALYSIS_PROVIDER` | `kimi` or `deepseek` |
+| `MAX_SOURCE_UPLOAD_BYTES` | Self-hosted staged-upload cap; defaults to 10 GiB |
+| `MAX_BROWSER_UPLOAD_BYTES` | Optional lower reverse-proxy ingress limit shown by the UI |
 
-For a self-hosted Node.js deployment, uploads are streamed to a private temporary directory before ffmpeg extracts, compresses, and chunks the audio. This avoids buffering the original MP4 in application memory. The default staged-upload cap is 10 GiB; set `MAX_SOURCE_UPLOAD_BYTES` (an integer byte count) only after confirming that the host has sufficient temporary disk space. If a reverse proxy has a lower inbound body limit, expose that exact byte limit with `MAX_BROWSER_UPLOAD_BYTES` so the UI can stop an upload before sending it.
-
-Vercel Functions reject request bodies larger than 4.5 MB before this application route runs. The app detects Vercel and explains that limit instead of claiming the file was accepted. To handle large files on Vercel, add a direct object-storage upload flow plus a separate worker that performs media conversion/chunking; changing Next.js Server Actions' body-size setting does not remove the Function ingress limit.
+Do not commit `.env.local`; it is ignored by Git.
 
 ## Providers
 
-| Provider | Model | Notes |
-|----------|-------|-------|
-| **Groq** | `whisper-large-v3-turbo` | Fast cloud transcription with timestamps; no hosted speaker diarization |
-| **OpenAI** | `whisper-1` | OpenAI's hosted Whisper |
-| **Local (Metal)** | `whisper-large-v3-turbo` via MLX | Runs on-device, no API key, supports speaker diarization |
+| Provider | Model | Speaker diarization |
+| --- | --- | --- |
+| Groq | `whisper-large-v3-turbo` | No |
+| OpenAI | `whisper-1` | No |
+| OpenAI + Diarization | `gpt-4o-transcribe-diarize` | Yes |
+| Local Metal | MLX `whisper-large-v3-turbo` + pyannote | Yes, Apple Silicon only |
 
-## Local Backend
+## Large files and hosting
 
-The local backend (`local_backend/`) runs Whisper via [mlx-whisper](https://github.com/ml-explore/mlx-examples) on Apple Silicon Metal GPU. Optimized for MacBook Air M4 (24 GB unified memory).
+On a local or self-hosted Node.js server, the original upload is streamed to a private temporary directory rather than held in memory. Ensure the machine has enough temporary disk space for the source file and converted audio. The default source-upload cap is 10 GiB.
 
-- **Transcription**: `mlx-community/whisper-large-v3-turbo` (~1.5 GB Metal RAM)
-- **Diarization**: `pyannote/speaker-diarization-3.1` (optional, needs `HF_TOKEN`)
+Vercel Functions reject request bodies above 4.5 MB before this route executes. A Vercel deployment therefore needs direct object-storage uploads and a separate media-processing worker for large recordings; changing a Next.js body-size setting does not bypass that platform limit.
 
-## Output Format
-
-```json
-{
-  "source_file": { "name": "audio.mp3", "type": "audio/mpeg", "size_bytes": 1234567 },
-  "provider": "local",
-  "model": "whisper-large-v3-turbo",
-  "language": "en",
-  "segments": [
-    { "index": 0, "start_ms": 0, "end_ms": 5000, "text": "Hello world", "speaker": "SPEAKER_00" }
-  ],
-  "full_text": "Hello world",
-  "created_at": "2024-01-01T00:00:00.000Z"
-}
-```
-
-## Testing
+## Development and verification
 
 ```bash
-npm test
+npm run dev
+npm test -- --runInBand
+npm run lint
+npm run build
 ```
 
-## License
-
-MIT
+Completed transcripts are stored under `transcriptions/`, which is excluded from Git.
