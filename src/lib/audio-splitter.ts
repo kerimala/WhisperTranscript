@@ -119,7 +119,8 @@ export async function getAudioDuration(filePath: string): Promise<number> {
  */
 export async function splitAudioFile(
     inputPath: string,
-    originalName: string
+    originalName: string,
+    maxSegmentDurationSec: number = MAX_SEGMENT_DURATION
 ): Promise<SplitResult> {
     // Create temp directory for segments
     const tempDir = path.join(os.tmpdir(), `whisper-${randomUUID()}`);
@@ -127,7 +128,11 @@ export async function splitAudioFile(
 
     const inputStats = await fs.stat(inputPath);
     const sourceDurationSec = await getAudioDuration(inputPath).catch(() => DEFAULT_SEGMENT_DURATION);
-    const segmentDurationSec = getAdaptiveSegmentDuration(inputStats.size, sourceDurationSec);
+    const segmentDurationSec = getAdaptiveSegmentDuration(
+        inputStats.size,
+        sourceDurationSec,
+        maxSegmentDurationSec
+    );
     console.log(
         `[audio] split start file="${originalName}" size=${formatMiB(inputStats.size)} ` +
         `duration=${sourceDurationSec.toFixed(1)}s segment_target=${segmentDurationSec}s`
@@ -165,6 +170,10 @@ export async function splitAudioFile(
                         .filter(f => f.startsWith('segment_'))
                         .sort();
 
+                    if (segmentFiles.length === 0) {
+                        throw new Error('ffmpeg completed without producing audio segments');
+                    }
+
                     const segments: AudioSegment[] = [];
                     let cumulativeOffsetMs = 0;
 
@@ -192,14 +201,17 @@ export async function splitAudioFile(
                         `[audio] split done file="${originalName}" segments=${segments.length} temp_dir="${tempDir}"`
                     );
                 } catch (err) {
+                    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
                     reject(new Error(`Failed to read segments: ${err}`));
                 }
             } else {
+                await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
                 reject(new Error(`ffmpeg splitting failed: ${errorOutput}`));
             }
         });
 
-        ffmpeg.on('error', (err) => {
+        ffmpeg.on('error', async (err) => {
+            await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
             reject(new Error(`ffmpeg not found. Please install ffmpeg: ${err.message}`));
         });
     });
@@ -316,14 +328,23 @@ export async function optimizeAudioForTranscription(
  * Estimate segment duration from bitrate so each segment stays well under API limits.
  * This reduces request count for long, low-bitrate files.
  */
-function getAdaptiveSegmentDuration(fileSizeBytes: number, durationSec: number): number {
+export function getAdaptiveSegmentDuration(
+    fileSizeBytes: number,
+    durationSec: number,
+    maxSegmentDurationSec: number = MAX_SEGMENT_DURATION
+): number {
+    const effectiveMaxDuration = Math.max(
+        MIN_SEGMENT_DURATION,
+        Math.min(MAX_SEGMENT_DURATION, maxSegmentDurationSec)
+    );
+
     if (!durationSec || durationSec <= 0) {
-        return DEFAULT_SEGMENT_DURATION;
+        return Math.min(DEFAULT_SEGMENT_DURATION, effectiveMaxDuration);
     }
 
     const bytesPerSecond = fileSizeBytes / durationSec;
     if (!isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
-        return DEFAULT_SEGMENT_DURATION;
+        return Math.min(DEFAULT_SEGMENT_DURATION, effectiveMaxDuration);
     }
 
     // Keep chunks close to the direct upload cap while leaving room for container overhead.
@@ -331,10 +352,10 @@ function getAdaptiveSegmentDuration(fileSizeBytes: number, durationSec: number):
     const estimated = Math.floor(targetChunkSizeBytes / bytesPerSecond);
 
     if (!isFinite(estimated) || estimated <= 0) {
-        return DEFAULT_SEGMENT_DURATION;
+        return Math.min(DEFAULT_SEGMENT_DURATION, effectiveMaxDuration);
     }
 
-    return Math.max(MIN_SEGMENT_DURATION, Math.min(MAX_SEGMENT_DURATION, estimated));
+    return Math.max(MIN_SEGMENT_DURATION, Math.min(effectiveMaxDuration, estimated));
 }
 
 /**

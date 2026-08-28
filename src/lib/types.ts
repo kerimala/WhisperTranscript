@@ -88,6 +88,8 @@ export interface TranscriptionResult {
         upload_mime_type: string;
         optimization_reason?: string;
         reduction_percent?: number;
+        source_duration_seconds?: number;
+        split_reason?: 'size' | 'duration' | 'size_and_duration';
     };
     pipelineSummary?: string;
     created_at: string;
@@ -199,6 +201,7 @@ export interface TranscriptionError {
     error: true;
     message: string;
     code?: string;
+    retryable?: boolean;
     supportedTypes?: string[];
     rateLimit?: RateLimitInfo;
     partialResult?: PartialTranscriptionResult;

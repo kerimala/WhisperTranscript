@@ -24,13 +24,24 @@ import {
     reassembleFullText,
 } from '@/lib/chunker';
 import {
+    calculateContiguousCompletedDurationMs,
+    createPartialTranscriptionResult,
+    getChunkConcurrency,
+    preparePreviousChunkResults,
+} from '@/lib/chunk-resume';
+import {
     needsAudioSplitting,
+    getAudioDuration,
     optimizeAudioForTranscription,
     saveUploadedFile,
     splitAudioFile,
     readSegmentAsFile,
     cleanupTempFiles,
 } from '@/lib/audio-splitter';
+import {
+    getProviderSegmentDurationLimit,
+    needsProviderDurationSplit,
+} from '@/lib/transcription-limits';
 import {
     createTranscriptionProvider,
     getAllTranscriptionProviders,
@@ -48,6 +59,8 @@ function errorResponse(
         supportedTypes?: string[];
         rateLimit?: RateLimitInfo;
         partialResult?: PartialTranscriptionResult;
+        code?: string;
+        retryable?: boolean;
     }
 ): NextResponse<TranscriptionError> {
     return NextResponse.json(
@@ -57,6 +70,8 @@ function errorResponse(
             ...(options?.supportedTypes && { supportedTypes: options.supportedTypes }),
             ...(options?.rateLimit && { rateLimit: options.rateLimit }),
             ...(options?.partialResult && { partialResult: options.partialResult }),
+            ...(options?.code && { code: options.code }),
+            ...(typeof options?.retryable === 'boolean' && { retryable: options.retryable }),
         },
         { status }
     );
@@ -159,6 +174,13 @@ function isRateLimitMessage(message: string): boolean {
     return message.includes('rate limit') || message.includes('Rate limit') || message.includes('429');
 }
 
+function isNetworkFailureMessage(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return normalized.includes('network request failed') ||
+        normalized.includes('fetch failed') ||
+        normalized.includes('und_err_');
+}
+
 function sortChunkResults(results: ChunkResult[]): ChunkResult[] {
     return [...results].sort((a, b) => a.index - b.index);
 }
@@ -172,12 +194,12 @@ interface ChunkFailure {
  * POST /api/transcribe
  */
 
-// Allow long-running local transcriptions (up to 30 minutes).
-// Without this, Next.js may terminate the route handler at ~5 minutes.
-export const maxDuration = 1800;
+// Allow long-running sequential diarization requests (up to 60 minutes).
+export const maxDuration = 3600;
 export async function POST(request: NextRequest): Promise<NextResponse<TranscriptionResult | TranscriptionError>> {
     const requestId = randomUUID().slice(0, 8);
     let tempDir: string | null = null;
+    let splitTempDir: string | null = null;
     const startedAt = Date.now();
     const log = (message: string) => console.log(`[transcribe:${requestId}] ${message}`);
     const warn = (message: string) => console.warn(`[transcribe:${requestId}] ${message}`);
@@ -304,8 +326,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         const startTime = new Date();
         log(`provider ready name=${provider.name} model=${provider.model}`);
 
-        if (needsAudioSplitting(file.size)) {
-            log(`large file path triggered original_size=${formatMiB(file.size)} optimize_then_split_if_needed=true`);
+        const sizeRequiresPreparation = needsAudioSplitting(file.size);
+        const providerDurationLimit = getProviderSegmentDurationLimit(provider.name);
+
+        if (sizeRequiresPreparation || providerDurationLimit !== null) {
+            log(
+                `audio preparation path triggered original_size=${formatMiB(file.size)} ` +
+                `check_size=${sizeRequiresPreparation} duration_limit_seconds=${providerDurationLimit ?? 'none'}`
+            );
 
             const savedFile = await saveUploadedFile(file);
             tempDir = savedFile.tempDir;
@@ -315,6 +343,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 const preparedPath = optimized.outputPath;
                 const preparedName = optimized.outputFileName;
                 const preparedMimeType = optimized.outputMimeType || file.type || 'audio/mpeg';
+                const preparedDurationSec = providerDurationLimit !== null
+                    ? await getAudioDuration(preparedPath)
+                    : null;
 
                 const pipelineSummary = optimized.applied
                     ? `Server compressed the upload to ${preparedName} (${(optimized.finalSizeBytes / 1024 / 1024).toFixed(1)} MB) before transcription.`
@@ -323,10 +354,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                         : 'Uploaded the original audio directly.';
                 log(`optimization result applied=${optimized.applied} reason=${optimized.reason} prepared_name="${preparedName}" prepared_size=${formatMiB(optimized.finalSizeBytes)} savings=${optimized.reductionPercent.toFixed(1)}%`);
 
-                if (!needsAudioSplitting(optimized.finalSizeBytes)) {
+                const splitForSize = needsAudioSplitting(optimized.finalSizeBytes);
+                const splitForDuration = preparedDurationSec !== null &&
+                    needsProviderDurationSplit(provider.name, preparedDurationSec);
+
+                log(
+                    `split decision size=${splitForSize} duration=${splitForDuration} ` +
+                    `duration_seconds=${preparedDurationSec?.toFixed(1) ?? 'not_checked'}`
+                );
+
+                if (!splitForSize && !splitForDuration) {
                     log(`prepared file fits direct upload; sending single request`);
                     const preparedFile = await readSegmentAsFile(preparedPath, preparedMimeType);
-                    const result = await provider.transcribe(preparedFile, language || undefined);
+                    const result = await provider.transcribe(
+                        preparedFile,
+                        language || undefined,
+                        request.signal
+                    );
                     const createdAt = startTime.toISOString();
                     const diarizedText = buildDiarizedText(result.segments, createdAt, provider.name, provider.model);
 
@@ -350,6 +394,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                             upload_mime_type: preparedMimeType,
                             optimization_reason: optimized.reason,
                             reduction_percent: Math.round(optimized.reductionPercent * 100) / 100,
+                            ...(preparedDurationSec !== null
+                                ? { source_duration_seconds: Math.round(preparedDurationSec * 1000) / 1000 }
+                                : {}),
                         },
                         pipelineSummary,
                         created_at: createdAt,
@@ -368,8 +415,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                     return NextResponse.json(transcriptionResult);
                 }
 
-                log(`prepared file still too large size=${formatMiB(optimized.finalSizeBytes)}; splitting`);
-                const splitResult = await splitAudioFile(preparedPath, preparedName);
+                const splitReason = splitForSize && splitForDuration
+                    ? 'size_and_duration'
+                    : splitForDuration
+                        ? 'duration'
+                        : 'size';
+                log(
+                    `prepared file requires splitting reason=${splitReason} ` +
+                    `size=${formatMiB(optimized.finalSizeBytes)} duration_seconds=${preparedDurationSec?.toFixed(1) ?? 'not_checked'}`
+                );
+                const splitResult = await splitAudioFile(
+                    preparedPath,
+                    preparedName,
+                    providerDurationLimit ?? undefined
+                );
+                splitTempDir = splitResult.tempDir;
 
                 log(`split ready chunks=${splitResult.segments.length}`);
 
@@ -377,41 +437,45 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 let cumulativeDurationMs = 0;
 
                 const skipIndicesStr = formData.get('skipChunks') as string | null;
-                const skipIndices: number[] = skipIndicesStr ? JSON.parse(skipIndicesStr) : [];
+                const requestedSkipIndices: number[] = skipIndicesStr ? JSON.parse(skipIndicesStr) : [];
 
                 const previousResultsStr = formData.get('previousResults') as string | null;
                 const previousResults: ChunkResult[] = previousResultsStr ? JSON.parse(previousResultsStr) : [];
 
-                const durationOffsetStr = formData.get('durationOffset') as string | null;
-                cumulativeDurationMs = durationOffsetStr ? parseInt(durationOffsetStr, 10) : 0;
-
-                const skipIndexSet = new Set(skipIndices);
-                const resultsByIndex = new Map<number, ChunkResult>();
-                for (const previous of previousResults) {
-                    resultsByIndex.set(previous.index, previous);
+                // Only skip chunks backed by a valid saved result. Never trust a
+                // standalone client-supplied skip index, which could omit audio.
+                const resultsByIndex = preparePreviousChunkResults(
+                    previousResults,
+                    splitResult.segments.length
+                );
+                const skipIndexSet = new Set(resultsByIndex.keys());
+                const ignoredSkipCount = requestedSkipIndices.filter(index => !skipIndexSet.has(index)).length;
+                if (ignoredSkipCount > 0) {
+                    warn(`ignored ${ignoredSkipCount} resume skip indices without valid previous results`);
                 }
 
                 const pendingSegments = splitResult.segments.filter((segment) => {
-                    const segmentEndOffsetMs = segment.startOffsetMs + (segment.durationMs || 0);
                     if (skipIndexSet.has(segment.index)) {
                         log(`skipping chunk index=${segment.index} offset_ms=${segment.startOffsetMs} reason=resumed_progress`);
-                        cumulativeDurationMs = Math.max(cumulativeDurationMs, segmentEndOffsetMs);
                         return false;
                     }
                     return true;
                 });
 
-                const chunkConcurrency = Math.min(
-                    MAX_PARALLEL_CHUNK_TRANSCRIPTIONS,
-                    Math.max(1, pendingSegments.length)
+                // Diarization requests can take several minutes and are billable.
+                // Process them sequentially so a transient failure cannot discard
+                // or abort another in-flight paid chunk.
+                const chunkConcurrency = getChunkConcurrency(
+                    provider.name,
+                    pendingSegments.length,
+                    MAX_PARALLEL_CHUNK_TRANSCRIPTIONS
                 );
-                const chunkAbortController = new AbortController();
                 let nextSegmentCursor = 0;
                 let firstChunkError: ChunkFailure | null = null;
 
                 log(
-                    `chunk execution mode=parallel concurrency=${chunkConcurrency} ` +
-                    `pending=${pendingSegments.length} skipped=${skipIndices.length}`
+                    `chunk execution mode=${chunkConcurrency === 1 ? 'sequential' : 'parallel'} concurrency=${chunkConcurrency} ` +
+                    `pending=${pendingSegments.length} skipped=${skipIndexSet.size}`
                 );
 
                 const workers = Array.from({ length: chunkConcurrency }, (_, workerOffset) => {
@@ -439,7 +503,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                                 const result = await provider.transcribe(
                                     segmentFile,
                                     language || undefined,
-                                    chunkAbortController.signal
+                                    request.signal
                                 );
 
                                 const adjustedSegments = result.segments.map(seg => ({
@@ -464,14 +528,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                             } catch (chunkError) {
                                 const errorMsg = chunkError instanceof Error ? chunkError.message : 'Chunk processing failed';
 
-                                if (chunkAbortController.signal.aborted && firstChunkError) {
-                                    log(
-                                        `chunk aborted index=${segment.index + 1}/${splitResult.segments.length} ` +
-                                        `worker=${workerId} reason=peer_failure`
-                                    );
-                                    return;
-                                }
-
                                 if (!firstChunkError) {
                                     firstChunkError = {
                                         message: errorMsg,
@@ -481,7 +537,6 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                                         `chunk failed index=${segment.index + 1}/${splitResult.segments.length} ` +
                                         `worker=${workerId} message="${errorMsg}"`
                                     );
-                                    chunkAbortController.abort();
                                 }
 
                                 return;
@@ -494,40 +549,69 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
 
                 const results = sortChunkResults(Array.from(resultsByIndex.values()));
                 detectedLanguage = results.find((result) => typeof result.language === 'string' && result.language.length > 0)?.language || null;
+                cumulativeDurationMs = calculateContiguousCompletedDurationMs(
+                    splitResult.segments,
+                    resultsByIndex
+                );
 
                 const chunkErrorState = firstChunkError as ChunkFailure | null;
                 if (chunkErrorState) {
-                    if (isRateLimitMessage(chunkErrorState.message)) {
-                        const completedChunks = results.map(r => r.index);
-                        const partialResult: PartialTranscriptionResult = {
-                            completedChunks,
-                            results,
-                            totalChunks: splitResult.segments.length,
-                            failedAtChunk: chunkErrorState.chunkIndex,
-                            cumulativeDurationMs,
-                            detectedLanguage,
-                        };
+                    const partialResult = createPartialTranscriptionResult(
+                        resultsByIndex,
+                        splitResult.segments.length,
+                        chunkErrorState.chunkIndex,
+                        cumulativeDurationMs,
+                        detectedLanguage
+                    );
+                    const completedChunks = partialResult.completedChunks;
 
+                    if (isRateLimitMessage(chunkErrorState.message)) {
                         const rateLimit = parseRateLimitError(chunkErrorState.message);
                         const retryMsg = rateLimit
                             ? `Rate limit exceeded at chunk ${chunkErrorState.chunkIndex + 1}/${splitResult.segments.length}. Completed ${completedChunks.length} chunks. Try again in ${Math.ceil(rateLimit.retryAfterSeconds / 60)} minute(s).`
                             : `Rate limit exceeded at chunk ${chunkErrorState.chunkIndex + 1}. Completed ${completedChunks.length} chunks.`;
 
                         await cleanupTempFiles(splitResult.tempDir);
+                        splitTempDir = null;
                         if (tempDir) {
                             await cleanupTempFiles(tempDir);
+                            tempDir = null;
                         }
 
                         return errorResponse(retryMsg, 429, {
                             rateLimit: rateLimit || undefined,
                             partialResult,
+                            code: 'provider_rate_limit',
+                            retryable: true,
                         });
                     }
 
-                    throw new Error(chunkErrorState.message);
+                    const isNetworkFailure = isNetworkFailureMessage(chunkErrorState.message);
+                    const completedMessage = completedChunks.length > 0
+                        ? ` Completed ${completedChunks.length}/${splitResult.segments.length} chunks were preserved; use Resume to process only the remaining chunks.`
+                        : '';
+                    const failureMessage = isNetworkFailure
+                        ? `The provider connection failed at chunk ${chunkErrorState.chunkIndex + 1}/${splitResult.segments.length}.${completedMessage} ` +
+                            'Resuming may submit the failed chunk again and could incur a duplicate charge if OpenAI completed it before the connection was lost. ' +
+                            chunkErrorState.message
+                        : `Chunk ${chunkErrorState.chunkIndex + 1}/${splitResult.segments.length} failed.${completedMessage} ${chunkErrorState.message}`;
+
+                    await cleanupTempFiles(splitResult.tempDir);
+                    splitTempDir = null;
+                    if (tempDir) {
+                        await cleanupTempFiles(tempDir);
+                        tempDir = null;
+                    }
+
+                    return errorResponse(failureMessage, isNetworkFailure ? 502 : 500, {
+                        ...(completedChunks.length > 0 ? { partialResult } : {}),
+                        code: isNetworkFailure ? 'provider_network_error' : 'chunk_failed',
+                        retryable: true,
+                    });
                 }
 
                 await cleanupTempFiles(splitResult.tempDir);
+                splitTempDir = null;
                 await cleanupTempFiles(tempDir);
                 tempDir = null;
 
@@ -556,8 +640,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                         upload_mime_type: preparedMimeType,
                         optimization_reason: optimized.reason,
                         reduction_percent: Math.round(optimized.reductionPercent * 100) / 100,
+                        ...(preparedDurationSec !== null
+                            ? { source_duration_seconds: Math.round(preparedDurationSec * 1000) / 1000 }
+                            : {}),
+                        split_reason: splitReason,
                     },
-                    pipelineSummary: `${pipelineSummary.replace(/\.$/, '')} It was still too large, so the server split it into ${splitResult.segments.length} chunks.`,
+                    pipelineSummary: splitForDuration
+                        ? `${pipelineSummary.replace(/\.$/, '')} The server split it into ${splitResult.segments.length} chunks to stay within the diarization model's per-request duration limit.`
+                        : `${pipelineSummary.replace(/\.$/, '')} It was still too large, so the server split it into ${splitResult.segments.length} chunks.`,
                     created_at: createdAt,
                 };
 
@@ -572,12 +662,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 log(`request complete duration_ms=${Date.now() - startedAt} chunks=${splitResult.segments.length} segments=${transcriptionResult.segments.length}`);
                 return NextResponse.json(transcriptionResult);
             } catch (ffmpegError) {
+                if (splitTempDir) {
+                    await cleanupTempFiles(splitTempDir);
+                    splitTempDir = null;
+                }
                 if (tempDir) {
                     await cleanupTempFiles(tempDir);
+                    tempDir = null;
                 }
 
                 const message = ffmpegError instanceof Error ? ffmpegError.message : 'Failed to process audio file';
-                warn(`large-file path failed message="${message}"`);
+                warn(`audio preparation path failed message="${message}"`);
 
                 if (message.includes('ffmpeg not found') || message.includes('ENOENT')) {
                     return errorResponse(
@@ -590,7 +685,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
             }
         }
 
-        const result = await provider.transcribe(file, language || undefined);
+        const result = await provider.transcribe(file, language || undefined, request.signal);
         const createdAt = startTime.toISOString();
         const diarizedText = buildDiarizedText(result.segments, createdAt, provider.name, provider.model);
         log(`direct upload complete segments=${result.segments.length} language=${result.language || 'unknown'}`);
@@ -622,6 +717,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         log(`request complete duration_ms=${Date.now() - startedAt} segments=${transcriptionResult.segments.length}`);
         return NextResponse.json(transcriptionResult);
     } catch (error) {
+        if (splitTempDir) {
+            await cleanupTempFiles(splitTempDir);
+        }
         if (tempDir) {
             await cleanupTempFiles(tempDir);
         }
@@ -664,6 +762,6 @@ export async function GET(): Promise<NextResponse> {
         hfTokenConfigured: Boolean(process.env.HF_TOKEN),
         supportedFormats: [...SUPPORTED_EXTENSIONS],
         maxFileSize: 'Unlimited (auto-split with ffmpeg)',
-        note: 'Oversized cloud uploads are compressed to smaller AAC audio first, then split only if still needed.',
+        note: 'Oversized cloud uploads are compressed to smaller AAC audio first. OpenAI diarization uploads are also split when their duration exceeds the model-safe request limit.',
     });
 }

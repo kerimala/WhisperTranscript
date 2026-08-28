@@ -14,6 +14,11 @@ import {
     TranscriptionProviderInfo,
     TranscriptionProviderName,
 } from './types';
+import {
+    describeNetworkError,
+    fetchWithOpenAITransport,
+    isNetworkFetchError,
+} from './openai-transport';
 
 interface ProviderConfig {
     apiKey: string;
@@ -189,7 +194,7 @@ class OpenAITranscriptionProvider implements TranscriptionProvider {
                     form.append('language', language);
                 }
 
-                const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                const response = await fetchWithOpenAITransport('https://api.openai.com/v1/audio/transcriptions', {
                     method: 'POST',
                     headers: {
                         Authorization: `Bearer ${this.apiKey}`,
@@ -229,8 +234,10 @@ class OpenAITranscriptionProvider implements TranscriptionProvider {
 
                 const message = (error as Error).message.toLowerCase();
                 if (message.includes('429') || message.includes('rate limit')) {
-                    const retryAfter = 5000 * (attempt + 1);
-                    await sleep(retryAfter);
+                    if (attempt < MAX_RETRIES - 1) {
+                        const retryAfter = 5000 * (attempt + 1);
+                        await sleep(retryAfter);
+                    }
                     continue;
                 }
 
@@ -238,9 +245,17 @@ class OpenAITranscriptionProvider implements TranscriptionProvider {
                     throw error;
                 }
 
-                if (attempt < MAX_RETRIES - 1) {
-                    await sleep(RETRY_DELAY_MS * Math.pow(2, attempt));
+                if (isNetworkFetchError(error)) {
+                    throw new Error(
+                        `OpenAI transcription network request failed: ${describeNetworkError(error)}. ` +
+                        'It was not retried automatically because the request may already have been processed.',
+                        { cause: error }
+                    );
                 }
+
+                // Only an explicit rate-limit rejection is retried automatically.
+                // Other provider outcomes may already have consumed the audio.
+                throw error;
             }
         }
 
@@ -276,7 +291,7 @@ class OpenAIDiarizeTranscriptionProvider implements TranscriptionProvider {
                     form.append('language', language);
                 }
 
-                const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                const response = await fetchWithOpenAITransport('https://api.openai.com/v1/audio/transcriptions', {
                     method: 'POST',
                     headers: {
                         Authorization: `Bearer ${this.apiKey}`,
@@ -310,7 +325,8 @@ class OpenAIDiarizeTranscriptionProvider implements TranscriptionProvider {
                 };
             } catch (error) {
                 lastError = error as Error;
-                console.warn(`[provider:openai_diarize] error ${describeFile(file)} attempt=${attempt + 1} message="${lastError.message}"`);
+                const errorDescription = describeNetworkError(error);
+                console.warn(`[provider:openai_diarize] error ${describeFile(file)} attempt=${attempt + 1} message="${errorDescription}"`);
 
                 if (signal?.aborted) {
                     throw error;
@@ -318,8 +334,10 @@ class OpenAIDiarizeTranscriptionProvider implements TranscriptionProvider {
 
                 const message = (error as Error).message.toLowerCase();
                 if (message.includes('429') || message.includes('rate limit')) {
-                    const retryAfter = 5000 * (attempt + 1);
-                    await sleep(retryAfter);
+                    if (attempt < MAX_RETRIES - 1) {
+                        const retryAfter = 5000 * (attempt + 1);
+                        await sleep(retryAfter);
+                    }
                     continue;
                 }
 
@@ -327,9 +345,20 @@ class OpenAIDiarizeTranscriptionProvider implements TranscriptionProvider {
                     throw error;
                 }
 
-                if (attempt < MAX_RETRIES - 1) {
-                    await sleep(RETRY_DELAY_MS * Math.pow(2, attempt));
+                // A long transcription may have reached OpenAI even if the response
+                // connection later failed. Blindly retrying can duplicate paid work.
+                // Return the detailed transport error so the chunk coordinator can
+                // preserve completed peers and offer an explicit resume.
+                if (isNetworkFetchError(error)) {
+                    throw new Error(
+                        `OpenAI diarized transcription network request failed: ${errorDescription}. ` +
+                        'It was not retried automatically because the request may already have been processed.',
+                        { cause: error }
+                    );
                 }
+
+                // Only an explicit rate-limit rejection is retried automatically.
+                throw error;
             }
         }
 

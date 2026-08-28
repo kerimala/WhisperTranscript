@@ -154,6 +154,7 @@ export default function Home() {
     const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
     const [retryCountdown, setRetryCountdown] = useState<number>(0);
     const [resumeState, setResumeState] = useState<ResumeState | null>(null);
+    const [resumeMayDuplicateCharge, setResumeMayDuplicateCharge] = useState(false);
     const [pendingFile, setPendingFile] = useState<File | null>(null);
     const [providers, setProviders] = useState<UIProviderInfo[]>([]);
     const [selectedProvider, setSelectedProvider] = useState<UIProviderName>('groq');
@@ -276,6 +277,7 @@ export default function Home() {
         setResult(null);
         setErrorMessage(null);
         setRateLimitInfo(null);
+        setResumeMayDuplicateCharge(false);
         setPendingFile(file);
 
         // Create abort controller for cancellation
@@ -389,6 +391,7 @@ export default function Home() {
                         cumulativeDurationMs: partial.cumulativeDurationMs,
                         detectedLanguage: partial.detectedLanguage,
                     });
+                    setResumeMayDuplicateCharge(data.code === 'provider_network_error');
 
                     setProcessing(prev => prev ? {
                         ...prev,
@@ -405,6 +408,7 @@ export default function Home() {
             // Success! Clear any saved progress
             clearProgress(progressKey);
             setResumeState(null);
+            setResumeMayDuplicateCharge(false);
             setPendingFile(null);
 
             // Success!
@@ -492,6 +496,7 @@ export default function Home() {
             clearProgress(resumeState.fileHash);
         }
         setResumeState(null);
+        setResumeMayDuplicateCharge(false);
 
         await processTranscription(pendingFile);
     }, [pendingFile, resumeState, processTranscription]);
@@ -510,6 +515,7 @@ export default function Home() {
         setRateLimitInfo(null);
         setRetryCountdown(0);
         setResumeState(null);
+        setResumeMayDuplicateCharge(false);
         setPendingFile(null);
     }, []);
 
@@ -780,6 +786,11 @@ export default function Home() {
                                                 style={{ width: `${(resumeState.completedChunks.length / resumeState.totalChunks) * 100}%` }}
                                             />
                                         </div>
+                                        {resumeMayDuplicateCharge && (
+                                            <p className="mt-3 text-xs text-amber-800">
+                                                Billing note: the failed chunk has an unknown provider outcome. Resuming may submit that chunk again; starting fresh resubmits every chunk. Either choice can add charges.
+                                            </p>
+                                        )}
                                     </div>
                                 )}
 
@@ -828,7 +839,7 @@ export default function Home() {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                             </svg>
-                                            Resume ({resumeState.totalChunks - resumeState.completedChunks.length} chunks left)
+                                            {resumeMayDuplicateCharge ? 'Resume unconfirmed chunk' : `Resume (${resumeState.totalChunks - resumeState.completedChunks.length} chunks left)`}
                                         </button>
                                     )}
                                     {resumeState && (
@@ -836,7 +847,7 @@ export default function Home() {
                                             onClick={handleStartFresh}
                                             className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors"
                                         >
-                                            Start Fresh
+                                            {resumeMayDuplicateCharge ? 'Start fresh (all chunks)' : 'Start Fresh'}
                                         </button>
                                     )}
                                     {!resumeState && (
