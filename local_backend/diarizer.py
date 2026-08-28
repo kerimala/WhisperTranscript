@@ -26,9 +26,12 @@ def diarize(
             "pyannote/speaker-diarization-3.1",
             token=hf_token,
         )
-        # With MLX-Whisper strictly unloaded, we can now safely run Pyannote
-        # on Apple Silicon Metal (MPS) to speed up embedding clustering 20x.
-        if torch.backends.mps.is_available():
+        # Prefer NVIDIA CUDA on Windows/Linux, Apple Metal on macOS, then CPU.
+        # The diarization-only workflow never loads MLX Whisper, so the chosen
+        # accelerator is available exclusively to pyannote.
+        if torch.cuda.is_available():
+            _pipeline.to(torch.device("cuda"))
+        elif torch.backends.mps.is_available():
             _pipeline.to(torch.device("mps"))
         else:
             _pipeline.to(torch.device("cpu"))
@@ -55,7 +58,12 @@ def diarize(
     
     # In pyannote-audio 4.x, the pipeline returns a DiarizeOutput object 
     # instead of a raw pyannote.core.Annotation.
-    if hasattr(diarization_result, "speaker_diarization"):
+    # Newer pyannote releases expose an exclusive, non-overlapping view made
+    # for assigning transcript timestamps to one speaker. Fall back cleanly
+    # for older 3.x releases.
+    if hasattr(diarization_result, "exclusive_speaker_diarization"):
+        diarization = diarization_result.exclusive_speaker_diarization
+    elif hasattr(diarization_result, "speaker_diarization"):
         diarization = diarization_result.speaker_diarization
     else:
         diarization = diarization_result

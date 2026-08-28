@@ -41,9 +41,15 @@ if _hf_startup_token:
     except Exception:
         pass  # non-fatal – mlx_whisper will still work anonymously
 
-from transcriber import transcribe, unload_model
+try:
+    from transcriber import transcribe, unload_model
+except ImportError:
+    # Windows installs the diarization-only backend and intentionally does not
+    # install Apple-only mlx-whisper.
+    transcribe = None
+    unload_model = None
 from diarizer import diarize, unload_diarizer
-from merger import merge
+from merger import merge, merge_timed_items
 from formatter import format_diarized
 
 app = FastAPI(title="Local Whisper + Diarization", version="1.0.0")
@@ -51,7 +57,93 @@ app = FastAPI(title="Local Whisper + Diarization", version="1.0.0")
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    return {"status": "ok", "diarization": True, "device": device}
+
+
+@app.post("/diarize")
+async def diarize_existing_transcript(
+    file: UploadFile = File(...),
+    transcript_json: str = Form(...),
+    hf_token: str = Form(default=""),
+    min_speakers: Optional[int] = Form(default=None),
+    max_speakers: Optional[int] = Form(default=None),
+):
+    """Diarize audio locally and attach speakers to an existing Groq transcript."""
+    import asyncio
+    import json
+    from fastapi.responses import StreamingResponse
+
+    token = hf_token.strip() or os.environ.get("HF_TOKEN", "").strip()
+    if not token:
+        return JSONResponse(
+            {"error": True, "message": "HF_TOKEN is required for local speaker detection."},
+            status_code=400,
+        )
+
+    try:
+        transcript = json.loads(transcript_json)
+    except json.JSONDecodeError:
+        return JSONResponse({"error": True, "message": "transcript_json is not valid JSON."}, status_code=400)
+
+    words = transcript.get("words") if isinstance(transcript, dict) else None
+    segments = transcript.get("segments") if isinstance(transcript, dict) else None
+    timed_items = words if isinstance(words, list) and words else segments
+    if not isinstance(timed_items, list) or not timed_items:
+        return JSONResponse(
+            {"error": True, "message": "The Groq transcript has no usable timed words or segments."},
+            status_code=400,
+        )
+
+    tmp_dir = tempfile.mkdtemp(prefix="whisper_diarize_")
+    suffix = os.path.splitext(file.filename or "audio")[1] or ".audio"
+    audio_path = os.path.join(tmp_dir, f"input{suffix}")
+    with open(audio_path, "wb") as output:
+        shutil.copyfileobj(file.file, output)
+
+    def run_diarization():
+        try:
+            wav_path = os.path.join(tmp_dir, "input_16k.wav")
+            try:
+                import subprocess
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", audio_path, "-ar", "16000", "-ac", "1", wav_path],
+                    capture_output=True,
+                    check=True,
+                )
+                diarize_path = wav_path
+            except Exception:
+                diarize_path = audio_path
+
+            turns = diarize(
+                diarize_path,
+                hf_token=token,
+                min_speakers=min_speakers,
+                max_speakers=max_speakers,
+            )
+            merged_segments = merge_timed_items(timed_items, turns)
+            return json.dumps({
+                "segments": merged_segments,
+                "speaker_count": len({turn[2] for turn in turns}),
+            })
+        except Exception as exc:
+            traceback.print_exc()
+            return json.dumps({"error": True, "message": str(exc)})
+        finally:
+            unload_diarizer()
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    async def stream_generator():
+        yield " " * 1024 + "\n"
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(None, run_diarization)
+        while not future.done():
+            yield " \n"
+            await asyncio.sleep(10.0)
+        yield future.result()
+
+    return StreamingResponse(stream_generator(), media_type="application/json")
 
 
 @app.post("/transcribe")
@@ -80,6 +172,8 @@ async def transcribe_audio(
 
     def run_transcription():
         try:
+            if transcribe is None or unload_model is None:
+                raise RuntimeError("Local Whisper transcription is available only on Apple Silicon. Use Groq + Local Speakers on this computer.")
             print(f"\n[{datetime.now().strftime('%H:%M:%S')}] ========================================================")
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Processing file: {file_name} ({file_size_bytes} bytes)")
             print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting transcription using MLX Whisper...")

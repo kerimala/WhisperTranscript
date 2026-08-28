@@ -63,7 +63,7 @@ export async function transcribeAudio(
                 file,
                 model: MODEL,
                 response_format: 'verbose_json',
-                timestamp_granularities: ['segment'],
+                timestamp_granularities: ['word', 'segment'],
                 ...(language && { language }),
             }, signal ? { signal } : undefined) as GroqTranscriptionResponse;
 
@@ -74,11 +74,17 @@ export async function transcribeAudio(
                 end_ms: seg.end ? Math.round(seg.end * 1000) : null,
                 text: seg.text.trim(),
             }));
+            const words = response.words?.map((word) => ({
+                word: word.word,
+                start_ms: Math.round(word.start * 1000),
+                end_ms: Math.round(word.end * 1000),
+            }));
 
             return {
                 index: 0, // Will be set by caller for chunked files
                 text: response.text,
                 segments,
+                ...(words?.length ? { words } : {}),
                 language: response.language,
             };
         } catch (error) {

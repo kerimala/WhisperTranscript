@@ -34,9 +34,9 @@ import type {
 } from '@/lib/transcription-progress';
 
 type AppState = 'idle' | 'processing' | 'complete' | 'error';
-type UIProviderName = TranscriptionProviderName | 'openai_diarize';
+type UIProviderName = TranscriptionProviderName | 'groq_local_diarize';
 type UIProviderInfo = Omit<TranscriptionProviderInfo, 'name'> & { name: UIProviderName };
-type PipelineStepId = 'upload' | 'compress' | 'split' | 'transcribe';
+type PipelineStepId = 'upload' | 'compress' | 'split' | 'transcribe' | 'diarize';
 
 interface PipelineStep {
     id: PipelineStepId;
@@ -50,7 +50,7 @@ interface PipelinePlan {
 }
 
 function isUIProviderName(value: string): value is UIProviderName {
-    return value === 'groq' || value === 'openai' || value === 'local' || value === 'openai_diarize';
+    return value === 'groq' || value === 'groq_local_diarize' || value === 'openai' || value === 'local' || value === 'openai_diarize';
 }
 
 interface ProcessingState {
@@ -92,6 +92,13 @@ const FALLBACK_PROVIDERS: UIProviderInfo[] = [
         configured: false,
     },
     {
+        name: 'groq_local_diarize',
+        displayName: 'Groq + Local Speakers',
+        model: 'whisper-large-v3-turbo + pyannote',
+        supportsSpeakerDiarization: true,
+        configured: false,
+    },
+    {
         name: 'openai',
         displayName: 'OpenAI',
         model: 'whisper-1',
@@ -116,6 +123,7 @@ const FALLBACK_PROVIDERS: UIProviderInfo[] = [
 
 const PROVIDER_LINKS: Record<UIProviderName, string> = {
     groq: 'https://console.groq.com/keys',
+    groq_local_diarize: 'https://console.groq.com/keys',
     openai: 'https://platform.openai.com/api-keys',
     openai_diarize: 'https://platform.openai.com/api-keys',
     local: 'https://huggingface.co/pyannote/speaker-diarization-3.1',
@@ -124,9 +132,11 @@ const PROVIDER_LINKS: Record<UIProviderName, string> = {
 const DIRECT_UPLOAD_LIMIT_BYTES = 24 * 1024 * 1024;
 
 function buildPipelinePlan(fileSize: number, provider: UIProviderName): PipelinePlan {
+    const isHybrid = provider === 'groq_local_diarize';
     const cloudSteps: PipelineStep[] = [
         { id: 'upload', label: 'Upload file' },
         { id: 'transcribe', label: provider === 'openai_diarize' ? 'Transcribe + diarize' : 'Transcribe' },
+        ...(isHybrid ? [{ id: 'diarize' as const, label: 'Detect speakers locally' }] : []),
     ];
 
     if (provider === 'local') {
@@ -141,7 +151,9 @@ function buildPipelinePlan(fileSize: number, provider: UIProviderName): Pipeline
 
     if (fileSize <= DIRECT_UPLOAD_LIMIT_BYTES) {
         return {
-            summary: 'Expected path: direct cloud upload and transcription.',
+            summary: isHybrid
+                ? 'Groq transcribes first; then only speaker detection runs on this computer.'
+                : 'Expected path: direct cloud upload and transcription.',
             steps: cloudSteps,
         };
     }
@@ -153,6 +165,7 @@ function buildPipelinePlan(fileSize: number, provider: UIProviderName): Pipeline
             { id: 'compress', label: 'Compress on server' },
             { id: 'split', label: 'Split into chunks', optional: true },
             { id: 'transcribe', label: provider === 'openai_diarize' ? 'Transcribe + diarize' : 'Transcribe' },
+            ...(isHybrid ? [{ id: 'diarize' as const, label: 'Detect speakers locally' }] : []),
         ],
     };
 }
@@ -162,6 +175,7 @@ function getProcessingMessage(step: PipelineStepId, provider: UIProviderName): s
     if (step === 'compress') return 'Optimizing audio size on server...';
     if (step === 'split') return 'Splitting audio into provider-safe chunks...';
     if (provider === 'openai_diarize') return 'Transcribing and diarizing speakers...';
+    if (provider === 'groq_local_diarize') return 'Transcribing with Groq, then detecting speakers locally...';
     return 'Transcribing audio...';
 }
 
@@ -171,6 +185,7 @@ function getPipelineStepForServerStage(
 ): PipelineStepId {
     if (stage === 'optimizing') return 'compress';
     if (stage === 'splitting') return 'split';
+    if (stage === 'diarizing') return 'diarize';
     if (stage === 'transcribing' || stage === 'complete' || stage === 'error') return 'transcribe';
 
     return pipelinePlan.steps.some((step) => step.id === 'compress')
@@ -273,6 +288,7 @@ export default function Home() {
     const [selectedProvider, setSelectedProvider] = useState<UIProviderName>('groq');
     const [providerApiKeys, setProviderApiKeys] = useState<Record<UIProviderName, string>>({
         groq: '',
+        groq_local_diarize: '',
         openai: '',
         openai_diarize: '',
         local: '',
@@ -291,7 +307,7 @@ export default function Home() {
     const activeProvider = providerOptions.find(p => p.name === selectedProvider) || providerOptions[0];
     const processingCost = processing
         ? estimateTranscriptionCost({
-            provider: processing.providerName,
+            provider: processing.providerName === 'groq_local_diarize' ? 'groq' : processing.providerName,
             audioDurationSeconds: processing.sourceDurationSeconds,
         })
         : null;
@@ -383,7 +399,7 @@ export default function Home() {
 
     // Check local backend health whenever local provider is selected
     useEffect(() => {
-        if (selectedProvider !== 'local') return;
+        if (selectedProvider !== 'local' && selectedProvider !== 'groq_local_diarize') return;
         let active = true;
 
         async function checkHealth() {
@@ -401,7 +417,7 @@ export default function Home() {
     }, [selectedProvider]);
 
     const handleProviderSelection = useCallback((providerName: UIProviderName) => {
-        if (providerName === 'local') {
+        if (providerName === 'local' || providerName === 'groq_local_diarize') {
             setBackendRunning(null); // reset to "checking" before the health request
         }
         setSelectedProvider(providerName);
@@ -494,7 +510,7 @@ export default function Home() {
             }
 
             // Local Metal provider extras
-            if (selectedProvider === 'local') {
+            if (selectedProvider === 'local' || selectedProvider === 'groq_local_diarize') {
                 if (localHfToken.trim()) {
                     formData.append('hfToken', localHfToken.trim());
                 }
@@ -843,7 +859,7 @@ export default function Home() {
                                                 }));
                                             }}
                                             disabled={state === 'processing'}
-                                            placeholder={selectedProvider === 'groq' ? 'gsk_...' : 'sk-...'}
+                                            placeholder={selectedProvider === 'groq' || selectedProvider === 'groq_local_diarize' ? 'gsk_...' : 'sk-...'}
                                             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                         />
                                         <p className="mt-2 text-xs text-slate-500">
@@ -881,6 +897,56 @@ export default function Home() {
                                             Groq provides fast transcription and timestamps, but its current hosted speech models do not return speaker labels.
                                             Choose OpenAI + Diarization or Local (Metal) when you need speaker separation.
                                         </span>
+                                    </div>
+                                )}
+
+                                {selectedProvider === 'groq_local_diarize' && (
+                                    <div className="mt-4 space-y-3">
+                                        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+                                            <span className="font-semibold">Recommended speaker workflow:</span>{' '}
+                                            Groq creates the transcript and word timestamps first. This computer then runs only pyannote speaker detection—local Whisper is skipped.
+                                        </div>
+
+                                        {backendRunning === null && (
+                                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                                                Checking local speaker service…
+                                            </div>
+                                        )}
+                                        {backendRunning === true && (
+                                            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+                                                ✓ Local speaker service is ready
+                                            </div>
+                                        )}
+                                        {backendRunning === false && (
+                                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                                Local speaker service is not running. Start WhisperForFiles with <code className="font-mono font-semibold">bash dev.sh</code> on Mac or the normal Desktop shortcut on Windows.
+                                            </div>
+                                        )}
+
+                                        {!hfTokenConfigured && (
+                                            <div>
+                                                <label htmlFor="hybridHfToken" className="mb-1.5 block text-xs font-medium text-slate-600">
+                                                    Hugging Face token for speaker detection
+                                                </label>
+                                                <input
+                                                    id="hybridHfToken"
+                                                    type="password"
+                                                    value={localHfToken}
+                                                    onChange={(event) => setLocalHfToken(event.target.value)}
+                                                    disabled={state === 'processing'}
+                                                    placeholder="hf_…"
+                                                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50"
+                                                />
+                                                <p className="mt-1.5 text-xs text-slate-500">
+                                                    Saved only when you add <code className="font-mono">HF_TOKEN</code> to <code className="font-mono">.env.local</code>; otherwise this is used for the current request.
+                                                </p>
+                                            </div>
+                                        )}
+                                        {hfTokenConfigured && (
+                                            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+                                                ✓ Speaker detection token configured
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 

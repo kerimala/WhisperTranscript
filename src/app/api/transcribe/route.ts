@@ -17,6 +17,7 @@ import {
     ChunkResult,
     TranscriptionProviderName,
     TranscriptSegment,
+    TranscriptWord,
 } from '@/lib/types';
 import { isValidFileType } from '@/utils/file-validation';
 import {
@@ -43,7 +44,9 @@ import {
     getMaxSourceUploadBytes,
     MultipartUploadError,
     receiveMultipartUpload,
+    type StreamedUploadFile,
 } from '@/lib/multipart-upload';
+import { diarizeExistingTranscriptLocally } from '@/lib/local-diarization';
 import {
     getProviderSegmentDurationLimit,
     needsProviderDurationSplit,
@@ -228,21 +231,22 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         const file = upload.file;
         const getField = (name: string): string | null => upload.fields.get(name) ?? null;
         const language = getField('language');
-        const providerRaw = getField('provider') ?? 'groq';
-        const providerName = providerRaw.toLowerCase().trim();
+        const providerRaw = (getField('provider') ?? 'groq').toLowerCase().trim();
+        const hybridDiarization = providerRaw === 'groq_local_diarize';
+        const providerName = hybridDiarization ? 'groq' : providerRaw;
         const apiKeyOverride = getField('apiKey')?.trim() || undefined;
         const progressId = getField('progressId');
         if (progressId) {
             startTranscriptionProgress(progressId, {
                 stage: 'received',
                 message: 'File received by server. Preparing transcription…',
-                provider: providerName,
+                provider: hybridDiarization ? 'groq_local_diarize' : providerName,
             });
             reportProgress = (update) => {
                 updateTranscriptionProgress(progressId, update);
             };
         }
-        log(`request received provider=${providerName} language=${language || 'auto'} file="${file.name}" size=${formatMiB(file.size)}`);
+        log(`request received provider=${providerRaw} language=${language || 'auto'} file="${file.name}" size=${formatMiB(file.size)}`);
 
         // Local provider: proxy straight to Python backend and return its response
         if (providerName === 'local') {
@@ -374,7 +378,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         }
 
         if (!isValidTranscriptionProvider(providerName)) {
-            return errorResponse(`Invalid provider: ${providerRaw}. Supported providers: groq, openai, openai_diarize, local`, 400);
+            return errorResponse(`Invalid provider: ${providerRaw}. Supported providers: groq, groq_local_diarize, openai, openai_diarize, local`, 400);
         }
 
         const envKey = getProviderApiKeyFromEnv(providerName);
@@ -386,6 +390,46 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         }
 
         const provider = createTranscriptionProvider(providerName, apiKeyOverride);
+        const localHfToken = getField('hfToken')?.trim() || (process.env.HF_TOKEN ?? '').trim();
+        const minSpeakers = Number.parseInt(getField('minSpeakers') || '1', 10);
+        const maxSpeakers = Number.parseInt(getField('maxSpeakers') || '10', 10);
+
+        const applyHybridDiarization = async (
+            audioFile: StreamedUploadFile,
+            result: Pick<ChunkResult, 'segments' | 'words'>,
+            sourceDurationSeconds?: number
+        ): Promise<TranscriptSegment[]> => {
+            if (!hybridDiarization) {
+                return result.segments;
+            }
+            if (!localHfToken) {
+                throw new Error('Add HF_TOKEN in the app or .env.local to use Groq + Local Speakers.');
+            }
+
+            reportProgress?.({
+                stage: 'diarizing',
+                message: 'Groq transcription complete. Detecting speakers locally…',
+                provider: 'groq_local_diarize',
+                model: `${provider.model} + pyannote`,
+                totalChunks: 1,
+                completedChunks: 0,
+                activeWorkers: 1,
+                workerLimit: 1,
+                ...(sourceDurationSeconds ? { sourceDurationSeconds } : {}),
+            });
+            log(`starting local-only diarization words=${result.words?.length ?? 0} segments=${result.segments.length}`);
+            const diarized = await diarizeExistingTranscriptLocally({
+                file: audioFile,
+                segments: result.segments,
+                words: result.words,
+                hfToken: localHfToken,
+                minSpeakers: Number.isFinite(minSpeakers) ? minSpeakers : 1,
+                maxSpeakers: Number.isFinite(maxSpeakers) ? maxSpeakers : 10,
+                signal: request.signal,
+            });
+            log(`local-only diarization complete speakers=${diarized.speakerCount ?? 'unknown'} segments=${diarized.segments.length}`);
+            return diarized.segments;
+        };
         const startTime = new Date();
         reportProgress?.({
             stage: 'received',
@@ -453,7 +497,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                         request.signal
                     );
                     const createdAt = startTime.toISOString();
-                    const diarizedText = buildDiarizedText(result.segments, createdAt, provider.name, provider.model);
+                    const outputSegments = await applyHybridDiarization({
+                        ...file,
+                        path: preparedPath,
+                        name: preparedName,
+                        type: preparedMimeType,
+                        size: optimized.finalSizeBytes,
+                    }, result, preparedDurationSec ?? undefined);
+                    const outputModel = hybridDiarization ? `${provider.model} + pyannote` : provider.model;
+                    const diarizedText = buildDiarizedText(outputSegments, createdAt, provider.name, outputModel);
 
                     const transcriptionResult: TranscriptionResult = {
                         source_file: {
@@ -462,9 +514,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                             size_bytes: file.size,
                         },
                         provider: provider.name,
-                        model: provider.model,
+                        model: outputModel,
                         language: result.language || null,
-                        segments: result.segments,
+                        segments: outputSegments,
                         full_text: result.text,
                         ...(diarizedText ? { diarized_text: diarizedText } : {}),
                         preparation: {
@@ -479,7 +531,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                                 ? { source_duration_seconds: Math.round(preparedDurationSec * 1000) / 1000 }
                                 : {}),
                         },
-                        pipelineSummary,
+                        pipelineSummary: hybridDiarization
+                            ? `${pipelineSummary.replace(/\.$/, '')} Groq transcribed the words; pyannote added speakers locally without running local Whisper.`
+                            : pipelineSummary,
                         created_at: createdAt,
                     };
 
@@ -633,6 +687,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                                     start_ms: seg.start_ms !== null ? seg.start_ms + segmentStartOffsetMs : null,
                                     end_ms: seg.end_ms !== null ? seg.end_ms + segmentStartOffsetMs : null,
                                 }));
+                                const adjustedWords = result.words?.map(word => ({
+                                    ...word,
+                                    start_ms: word.start_ms + segmentStartOffsetMs,
+                                    end_ms: word.end_ms + segmentStartOffsetMs,
+                                }));
 
                                 cumulativeDurationMs = Math.max(cumulativeDurationMs, segmentEndOffsetMs);
 
@@ -640,6 +699,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                                     index: segment.index,
                                     text: result.text,
                                     segments: adjustedSegments,
+                                    ...(adjustedWords?.length ? { words: adjustedWords } : {}),
                                     language: result.language,
                                 });
                                 completedChunkCount = resultsByIndex.size;
@@ -759,15 +819,27 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                     });
                 }
 
+                const fullText = reassembleFullText(results);
+                const transcriptSegments = reassembleTranscriptSegments(results) as TranscriptSegment[];
+                const words: TranscriptWord[] = results.flatMap((result) => result.words || []);
+                const segments = await applyHybridDiarization({
+                    ...file,
+                    path: preparedPath,
+                    name: preparedName,
+                    type: preparedMimeType,
+                    size: optimized.finalSizeBytes,
+                }, {
+                    segments: transcriptSegments,
+                    ...(words.length ? { words } : {}),
+                }, sourceDurationSeconds);
+                const createdAt = startTime.toISOString();
+                const outputModel = hybridDiarization ? `${provider.model} + pyannote` : provider.model;
+                const diarizedText = buildDiarizedText(segments, createdAt, provider.name, outputModel);
+
                 await cleanupTempFiles(splitResult.tempDir);
                 splitTempDir = null;
                 await cleanupTempFiles(tempDir);
                 tempDir = null;
-
-                const fullText = reassembleFullText(results);
-                const segments = reassembleTranscriptSegments(results) as TranscriptSegment[];
-                const createdAt = startTime.toISOString();
-                const diarizedText = buildDiarizedText(segments, createdAt, provider.name, provider.model);
 
                 const transcriptionResult: TranscriptionResult = {
                     source_file: {
@@ -776,7 +848,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                         size_bytes: file.size,
                     },
                     provider: provider.name,
-                    model: provider.model,
+                    model: outputModel,
                     language: detectedLanguage,
                     segments,
                     full_text: fullText,
@@ -794,9 +866,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                             : {}),
                         split_reason: splitReason,
                     },
-                    pipelineSummary: splitForDuration
-                        ? `${pipelineSummary.replace(/\.$/, '')} The server split it into ${splitResult.segments.length} chunks to stay within the diarization model's per-request duration limit.`
-                        : `${pipelineSummary.replace(/\.$/, '')} It was still too large, so the server split it into ${splitResult.segments.length} chunks.`,
+                    pipelineSummary: `${splitForDuration
+                        ? `${pipelineSummary.replace(/\.$/, '')} The server split it into ${splitResult.segments.length} chunks to stay within the provider's per-request duration limit.`
+                        : `${pipelineSummary.replace(/\.$/, '')} It was still too large, so the server split it into ${splitResult.segments.length} chunks.`}${hybridDiarization
+                        ? ' Groq transcribed the words; pyannote added speakers locally without running local Whisper.'
+                        : ''}`,
                     created_at: createdAt,
                 };
 
@@ -857,7 +931,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         });
         const result = await provider.transcribe(directFile, language || undefined, request.signal);
         const createdAt = startTime.toISOString();
-        const diarizedText = buildDiarizedText(result.segments, createdAt, provider.name, provider.model);
+        const outputSegments = await applyHybridDiarization(file, result);
+        const outputModel = hybridDiarization ? `${provider.model} + pyannote` : provider.model;
+        const diarizedText = buildDiarizedText(outputSegments, createdAt, provider.name, outputModel);
         log(`direct upload complete segments=${result.segments.length} language=${result.language || 'unknown'}`);
 
         const transcriptionResult: TranscriptionResult = {
@@ -867,12 +943,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 size_bytes: file.size,
             },
             provider: provider.name,
-            model: provider.model,
+            model: outputModel,
             language: result.language || null,
-            segments: result.segments,
+            segments: outputSegments,
             full_text: result.text,
             ...(diarizedText ? { diarized_text: diarizedText } : {}),
-            pipelineSummary: 'Uploaded the original audio directly.',
+            pipelineSummary: hybridDiarization
+                ? 'Groq transcribed the words; pyannote added speakers locally without running local Whisper.'
+                : 'Uploaded the original audio directly.',
             created_at: createdAt,
         };
 
@@ -954,11 +1032,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
  * GET /api/transcribe
  */
 export async function GET(): Promise<NextResponse> {
-    const providers = getAllTranscriptionProviders();
+    const baseProviders = getAllTranscriptionProviders().filter(
+        (provider) => provider.name !== 'local' || process.platform === 'darwin'
+    );
+    const groq = baseProviders.find((provider) => provider.name === 'groq');
+    const providers = groq ? [
+        groq,
+        {
+            name: 'groq_local_diarize',
+            displayName: 'Groq + Local Speakers',
+            model: 'whisper-large-v3-turbo + pyannote',
+            supportsSpeakerDiarization: true,
+            configured: groq.configured && Boolean(process.env.HF_TOKEN),
+        },
+        ...baseProviders.filter((provider) => provider.name !== 'groq'),
+    ] : baseProviders;
     const browserUploadLimitBytes = getBrowserUploadLimitBytes();
-    const defaultProvider: TranscriptionProviderName = providers.find(
-        (provider) => provider.configured && provider.name !== 'local'
-    )?.name || (process.platform === 'darwin' ? 'local' : 'groq');
+    const defaultProvider = groq?.configured && process.env.HF_TOKEN
+        ? 'groq_local_diarize'
+        : providers.find((provider) => provider.configured && provider.name !== 'local')?.name || 'groq';
 
     return NextResponse.json({
         name: 'Whisper Transcription API',
@@ -975,6 +1067,6 @@ export async function GET(): Promise<NextResponse> {
             browserUploadLimitBytes,
             requiresDirectStorageForLargerFiles: browserUploadLimitBytes !== null,
         },
-        note: 'Large uploads are streamed to temporary disk before compression and chunking. Groq returns transcription timestamps but not speaker labels. OpenAI diarization uploads are also split when their duration exceeds the model-safe request limit.',
+        note: 'Groq + Local Speakers transcribes in Groq, then runs only pyannote speaker detection on this computer. Large uploads are streamed to temporary disk before compression and chunking.',
     });
 }

@@ -14,6 +14,7 @@ export type TranscriptionProgressStage =
     | 'optimizing'
     | 'splitting'
     | 'transcribing'
+    | 'diarizing'
     | 'complete'
     | 'error';
 

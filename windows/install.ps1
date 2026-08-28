@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 $ProjectDir = Split-Path -Parent $PSScriptRoot
 $MinimumNodeVersion = [version]'20.9.0'
+$MinimumPythonVersion = [version]'3.10.0'
 
 function Write-Step {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -96,6 +97,31 @@ if (-not (Test-Command 'ffmpeg.exe') -or -not (Test-Command 'ffprobe.exe')) {
 }
 Write-Host 'FFmpeg and ffprobe are ready.' -ForegroundColor Green
 
+$pythonNeedsInstall = -not (Test-Command 'python.exe')
+if (-not $pythonNeedsInstall) {
+    try {
+        $installedPythonVersion = [version](& python.exe -c 'import platform; print(platform.python_version())')
+        $pythonNeedsInstall = $installedPythonVersion -lt $MinimumPythonVersion
+    }
+    catch {
+        $pythonNeedsInstall = $true
+    }
+}
+
+if ($pythonNeedsInstall) {
+    Install-WinGetPackage -Id 'Python.Python.3.11' -DisplayName 'Python 3.11'
+}
+
+if (-not (Test-Command 'python.exe')) {
+    throw 'Python is still unavailable. Restart Windows, then run this installer again.'
+}
+
+$installedPythonVersion = [version](& python.exe -c 'import platform; print(platform.python_version())')
+if ($installedPythonVersion -lt $MinimumPythonVersion) {
+    throw "Python $MinimumPythonVersion or newer is required; found $installedPythonVersion."
+}
+Write-Host "Python $installedPythonVersion is ready." -ForegroundColor Green
+
 $npmCommand = Get-NpmCommand
 
 Push-Location $ProjectDir
@@ -106,6 +132,25 @@ try {
         throw "npm ci failed with exit code $LASTEXITCODE."
     }
 
+    Write-Step 'Installing the local speaker detection service'
+    $backendDir = Join-Path $ProjectDir 'local_backend'
+    $venvDir = Join-Path $backendDir '.venv'
+    $venvPython = Join-Path $venvDir 'Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $venvPython)) {
+        & python.exe -m venv $venvDir
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not create the Python environment (exit code $LASTEXITCODE)."
+        }
+    }
+    & $venvPython -m pip install --quiet --upgrade pip
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not update pip (exit code $LASTEXITCODE)."
+    }
+    & $venvPython -m pip install --quiet -r (Join-Path $backendDir 'requirements-diarization.txt')
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not install local speaker detection (exit code $LASTEXITCODE)."
+    }
+
     $envFile = Join-Path $ProjectDir '.env.local'
     if (-not (Test-Path -LiteralPath $envFile)) {
         Write-Step 'Creating .env.local'
@@ -113,6 +158,9 @@ try {
 # Add at least one cloud transcription key, or paste a key in the app UI.
 GROQ_API_KEY=
 OPENAI_API_KEY=
+
+# Required for Groq + Local Speakers. Accept access for the pyannote model first.
+HF_TOKEN=
 
 # Optional AI analysis providers.
 KIMI_API_KEY=
@@ -154,5 +202,6 @@ if (-not $NoDesktopShortcut) {
 
 Write-Host "`nInstallation complete." -ForegroundColor Green
 Write-Host '1. Add a GROQ_API_KEY to .env.local, or paste it in the app.'
-Write-Host '2. Run Start-WhisperForFiles-Windows.cmd (or the Desktop shortcut).'
-Write-Host 'Windows uses cloud transcription; Local Metal mode is Apple Silicon-only.'
+Write-Host '2. Add HF_TOKEN for local speaker detection.'
+Write-Host '3. Run Start-WhisperForFiles-Windows.cmd (or the Desktop shortcut).'
+Write-Host 'Groq transcription plus local pyannote speaker detection is available on Windows and macOS.'

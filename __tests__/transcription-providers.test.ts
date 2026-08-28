@@ -39,7 +39,8 @@ describe('Groq transcription provider', () => {
         const createSpy = jest.spyOn(client.audio.transcriptions, 'create').mockResolvedValue({
             text: 'Hello',
             language: 'en',
-            segments: [],
+            segments: [{ start: 0, end: 0.5, text: 'Hello' }],
+            words: [{ start: 0, end: 0.5, word: 'Hello' }],
         });
         const controller = new AbortController();
         const file = new File(['audio'], 'chunk.webm', { type: 'audio/webm' });
@@ -51,9 +52,14 @@ describe('Groq transcription provider', () => {
                 file,
                 model: 'whisper-large-v3-turbo',
                 response_format: 'verbose_json',
+                timestamp_granularities: ['word', 'segment'],
             }),
             { signal: controller.signal }
         );
+
+        await expect(provider.transcribe(file, 'en')).resolves.toEqual(expect.objectContaining({
+            words: [{ word: 'Hello', start_ms: 0, end_ms: 500 }],
+        }));
     });
 });
 

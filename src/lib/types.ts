@@ -71,6 +71,14 @@ export interface TranscriptSegment {
     speaker?: string;
 }
 
+/** A single recognized word with provider timestamps. */
+export interface TranscriptWord {
+    word: string;
+    start_ms: number;
+    end_ms: number;
+    speaker?: string;
+}
+
 /**
  * Final transcription result matching the spec
  */
@@ -125,6 +133,8 @@ export interface ChunkResult {
     index: number;
     text: string;
     segments: TranscriptSegment[];
+    /** Word timestamps are retained when the provider supplies them. */
+    words?: TranscriptWord[];
     language?: string;
 }
 

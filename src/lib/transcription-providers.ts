@@ -11,6 +11,7 @@ import Groq from 'groq-sdk';
 import {
     ChunkResult,
     TranscriptSegment,
+    TranscriptWord,
     TranscriptionProviderInfo,
     TranscriptionProviderName,
 } from './types';
@@ -38,6 +39,11 @@ interface VerboseTranscriptionResponse {
         start?: number;
         end?: number;
         text: string;
+    }>;
+    words?: Array<{
+        word: string;
+        start?: number;
+        end?: number;
     }>;
 }
 
@@ -84,6 +90,18 @@ function mapSegments(response: VerboseTranscriptionResponse): TranscriptSegment[
     }));
 }
 
+function mapWords(response: VerboseTranscriptionResponse): TranscriptWord[] | undefined {
+    const words = response.words
+        ?.filter((word) => typeof word.start === 'number' && typeof word.end === 'number')
+        .map((word) => ({
+            word: word.word,
+            start_ms: Math.round(word.start! * 1000),
+            end_ms: Math.round(word.end! * 1000),
+        }));
+
+    return words && words.length > 0 ? words : undefined;
+}
+
 function mapDiarizedSegments(response: DiarizedTranscriptionResponse): TranscriptSegment[] {
     if (!response.segments || response.segments.length === 0) {
         return [
@@ -128,7 +146,7 @@ class GroqTranscriptionProvider implements TranscriptionProvider {
                     file,
                     model: this.model,
                     response_format: 'verbose_json',
-                    timestamp_granularities: ['segment'],
+                    timestamp_granularities: ['word', 'segment'],
                     ...(language && { language }),
                 }, signal ? { signal } : undefined) as VerboseTranscriptionResponse;
 
@@ -137,6 +155,7 @@ class GroqTranscriptionProvider implements TranscriptionProvider {
                     index: 0,
                     text: response.text,
                     segments: mapSegments(response),
+                    words: mapWords(response),
                     language: response.language,
                 };
             } catch (error) {

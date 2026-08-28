@@ -11,7 +11,7 @@ import { formatFileSize } from '@/utils/file-validation';
 import type { TranscriptionCostEstimate } from '@/lib/transcription-cost';
 import type { TranscriptionProgressStage } from '@/lib/transcription-progress';
 
-type PipelineStepId = 'upload' | 'compress' | 'split' | 'transcribe';
+type PipelineStepId = 'upload' | 'compress' | 'split' | 'transcribe' | 'diarize';
 
 interface ProgressIndicatorProps {
     fileName: string;
@@ -59,6 +59,7 @@ function getStageLabel(stage: ProgressIndicatorProps['stage'], serverStage?: Tra
         case 'optimizing': return 'Optimizing audio';
         case 'splitting': return 'Preparing chunks';
         case 'transcribing': return 'Transcribing';
+        case 'diarizing': return 'Detecting speakers locally';
         default: return 'Working on server';
     }
 }
