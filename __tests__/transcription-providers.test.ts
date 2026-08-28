@@ -5,7 +5,57 @@ import {
     fetchWithOpenAITransport,
     OPENAI_TRANSCRIPTION_TIMEOUT_MS,
 } from '../src/lib/openai-transport';
-import { createTranscriptionProvider } from '../src/lib/transcription-providers';
+import {
+    createTranscriptionProvider,
+    getTranscriptionProviderInfo,
+} from '../src/lib/transcription-providers';
+
+describe('transcription provider capability metadata', () => {
+    it('does not advertise Groq speaker diarization that its hosted speech API does not provide', () => {
+        expect(getTranscriptionProviderInfo('groq')).toEqual(expect.objectContaining({
+            model: 'whisper-large-v3-turbo',
+            supportsSpeakerDiarization: false,
+        }));
+    });
+
+    it('identifies the providers that can return speaker labels', () => {
+        expect(getTranscriptionProviderInfo('openai_diarize').supportsSpeakerDiarization).toBe(true);
+        expect(getTranscriptionProviderInfo('local').supportsSpeakerDiarization).toBe(true);
+    });
+});
+
+describe('Groq transcription provider', () => {
+    it('forwards cancellation to the Groq SDK request', async () => {
+        const provider = createTranscriptionProvider('groq', 'test-key');
+        const client = (provider as unknown as {
+            client: {
+                audio: {
+                    transcriptions: {
+                        create: (...args: unknown[]) => Promise<unknown>;
+                    };
+                };
+            };
+        }).client;
+        const createSpy = jest.spyOn(client.audio.transcriptions, 'create').mockResolvedValue({
+            text: 'Hello',
+            language: 'en',
+            segments: [],
+        });
+        const controller = new AbortController();
+        const file = new File(['audio'], 'chunk.webm', { type: 'audio/webm' });
+
+        await provider.transcribe(file, 'en', controller.signal);
+
+        expect(createSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                file,
+                model: 'whisper-large-v3-turbo',
+                response_format: 'verbose_json',
+            }),
+            { signal: controller.signal }
+        );
+    });
+});
 
 describe('OpenAI transcription transport', () => {
     it('allows substantially longer than the default five-minute Undici timeout', () => {

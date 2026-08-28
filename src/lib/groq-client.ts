@@ -65,7 +65,7 @@ export async function transcribeAudio(
                 response_format: 'verbose_json',
                 timestamp_granularities: ['segment'],
                 ...(language && { language }),
-            }) as GroqTranscriptionResponse;
+            }, signal ? { signal } : undefined) as GroqTranscriptionResponse;
 
             // Convert Groq segments to our format
             const segments: TranscriptSegment[] = (response.segments || []).map((seg, idx) => ({

@@ -4,7 +4,7 @@
  * FileUploader Component
  * 
  * Drag & drop file upload with validation and accessibility.
- * Now supports unlimited file sizes (auto-split on server).
+ * Large files are streamed, optimized, and split by compatible servers.
  */
 
 import React, { useCallback, useState, useRef } from 'react';
@@ -24,7 +24,8 @@ export default function FileUploader({ onFileSelect, disabled = false }: FileUpl
     const handleFile = useCallback((file: File) => {
         setError(null);
 
-        // Only validate file type - size is now unlimited (auto-split on server)
+        // File-size policy belongs to the selected server. Large media is
+        // preflighted by the app when the host publishes an ingress limit.
         if (!isValidFileType(file)) {
             setError(`Unsupported file type. Please use: ${SUPPORTED_EXTENSIONS.join(', ')}`);
             return;
@@ -164,8 +165,8 @@ export default function FileUploader({ onFileSelect, disabled = false }: FileUpl
                         <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
-                        <span className="text-emerald-600">No file size limit</span>
-                        <span className="text-slate-400">— large files auto-split</span>
+                        <span className="text-emerald-600">Large files supported on compatible servers</span>
+                        <span className="text-slate-400">— streamed, optimized, then split</span>
                     </p>
                 </div>
             </div>

@@ -10,7 +10,7 @@ A production-ready transcription web app with selectable Whisper providers — c
 - 🗣️ **Speaker Diarization** — Identify who said what (local mode, requires HuggingFace token)
 - 📁 **Multiple Formats** — flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm
 - 📊 **Structured Output** — JSON with segments, timestamps, and metadata
-- 🔄 **Unlimited File Size** — Large files automatically split using ffmpeg
+- 🔄 **Large media support** — Self-hosted servers stream uploads to disk, then optimize and split them with ffmpeg
 - 🤖 **AI Analysis** — Summarize, extract tasks, or key points (Kimi / DeepSeek)
 - 🎨 **Modern UI** — Clean, responsive design with progress tracking
 
@@ -62,11 +62,17 @@ Open [http://localhost:3000](http://localhost:3000) to use the app.
 | `DEEPSEEK_API_KEY` | For AI analysis | DeepSeek API key |
 | `AI_ANALYSIS_PROVIDER` | Optional | Default AI provider: `kimi` or `deepseek` |
 
+## Large uploads and hosting
+
+For a self-hosted Node.js deployment, uploads are streamed to a private temporary directory before ffmpeg extracts, compresses, and chunks the audio. This avoids buffering the original MP4 in application memory. The default staged-upload cap is 10 GiB; set `MAX_SOURCE_UPLOAD_BYTES` (an integer byte count) only after confirming that the host has sufficient temporary disk space. If a reverse proxy has a lower inbound body limit, expose that exact byte limit with `MAX_BROWSER_UPLOAD_BYTES` so the UI can stop an upload before sending it.
+
+Vercel Functions reject request bodies larger than 4.5 MB before this application route runs. The app detects Vercel and explains that limit instead of claiming the file was accepted. To handle large files on Vercel, add a direct object-storage upload flow plus a separate worker that performs media conversion/chunking; changing Next.js Server Actions' body-size setting does not remove the Function ingress limit.
+
 ## Providers
 
 | Provider | Model | Notes |
 |----------|-------|-------|
-| **Groq** | `whisper-large-v3-turbo` | Fast cloud transcription |
+| **Groq** | `whisper-large-v3-turbo` | Fast cloud transcription with timestamps; no hosted speaker diarization |
 | **OpenAI** | `whisper-1` | OpenAI's hosted Whisper |
 | **Local (Metal)** | `whisper-large-v3-turbo` via MLX | Runs on-device, no API key, supports speaker diarization |
 

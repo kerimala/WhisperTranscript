@@ -46,6 +46,8 @@ export interface TranscriptionProviderInfo {
     name: TranscriptionProviderName;
     displayName: string;
     model: string;
+    /** Whether returned segments can carry speaker labels. */
+    supportsSpeakerDiarization: boolean;
     configured: boolean;
 }
 

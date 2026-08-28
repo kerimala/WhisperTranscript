@@ -25,6 +25,7 @@ import {
     loadProgress,
     clearProgress,
 } from '@/lib/transcription-cache';
+import { formatFileSize } from '@/utils/file-validation';
 
 type AppState = 'idle' | 'processing' | 'complete' | 'error';
 type UIProviderName = TranscriptionProviderName | 'openai_diarize';
@@ -73,24 +74,28 @@ const FALLBACK_PROVIDERS: UIProviderInfo[] = [
         name: 'groq',
         displayName: 'Groq',
         model: 'whisper-large-v3-turbo',
+        supportsSpeakerDiarization: false,
         configured: false,
     },
     {
         name: 'openai',
         displayName: 'OpenAI',
         model: 'whisper-1',
+        supportsSpeakerDiarization: false,
         configured: false,
     },
     {
         name: 'openai_diarize',
         displayName: 'OpenAI + Diarization',
         model: 'gpt-4o-transcribe-diarize',
+        supportsSpeakerDiarization: true,
         configured: false,
     },
     {
         name: 'local',
         displayName: 'Local (Metal)',
         model: 'whisper-large-v3-turbo',
+        supportsSpeakerDiarization: true,
         configured: true,
     },
 ];
@@ -169,27 +174,31 @@ export default function Home() {
     const [backendRunning, setBackendRunning] = useState<boolean | null>(null);
     const [selectedLanguage, setSelectedLanguage] = useState('auto');
     const [history, setHistory] = useState<any[]>([]);
+    const [browserUploadLimitBytes, setBrowserUploadLimitBytes] = useState<number | null>(null);
     const abortControllerRef = useRef<AbortController | null>(null);
 
     const providerOptions = providers.length > 0 ? providers : FALLBACK_PROVIDERS;
     const activeProvider = providerOptions.find(p => p.name === selectedProvider) || providerOptions[0];
 
-    // Load transcription history
-    const loadHistory = useCallback(async () => {
-        try {
-            const res = await fetch('/api/transcriptions');
-            if (res.ok) {
-                const data = await res.json();
-                setHistory(data.transcriptions || []);
-            }
-        } catch (err) {
-            console.error("Failed to load history", err);
-        }
-    }, []);
-
     useEffect(() => {
-        loadHistory();
-    }, [loadHistory, state]); // Reload when state changes (completed transcription)
+        let active = true;
+
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/transcriptions');
+                if (!res.ok) return;
+                const data = await res.json();
+                if (active) {
+                    setHistory(data.transcriptions || []);
+                }
+            } catch (err) {
+                console.error("Failed to load history", err);
+            }
+        }
+
+        void loadHistory();
+        return () => { active = false; };
+    }, [state]); // Reload when state changes (completed transcription)
 
     // Load provider metadata
     useEffect(() => {
@@ -212,6 +221,15 @@ export default function Home() {
                 if (typeof data.hfTokenConfigured === 'boolean') {
                     setHfTokenConfigured(data.hfTokenConfigured);
                 }
+                const upload = data.upload;
+                if (
+                    upload &&
+                    typeof upload.browserUploadLimitBytes === 'number' &&
+                    Number.isFinite(upload.browserUploadLimitBytes) &&
+                    upload.browserUploadLimitBytes > 0
+                ) {
+                    setBrowserUploadLimitBytes(upload.browserUploadLimitBytes);
+                }
             } catch {
                 // Keep fallback providers
             }
@@ -227,7 +245,6 @@ export default function Home() {
     useEffect(() => {
         if (selectedProvider !== 'local') return;
         let active = true;
-        setBackendRunning(null); // reset to "checking"
 
         async function checkHealth() {
             try {
@@ -242,6 +259,13 @@ export default function Home() {
         checkHealth();
         return () => { active = false; };
     }, [selectedProvider]);
+
+    const handleProviderSelection = useCallback((providerName: UIProviderName) => {
+        if (providerName === 'local') {
+            setBackendRunning(null); // reset to "checking" before the health request
+        }
+        setSelectedProvider(providerName);
+    }, []);
 
     // Countdown timer for rate limit retry
     useEffect(() => {
@@ -355,7 +379,12 @@ export default function Home() {
                 currentPipelineStep: 'transcribe',
             } : null);
 
-            const data = await response.json();
+            const data = await response.json().catch(() => ({
+                error: true,
+                message: response.status === 413
+                    ? 'This host rejected the original upload before it reached the transcription server. Use a local/self-hosted server for large media, or configure a direct object-storage upload for this hosted deployment.'
+                    : `The transcription server returned ${response.status} without a readable error message.`,
+            }));
 
             if (isTranscriptionError(data)) {
                 // Check for rate limit with partial results
@@ -447,6 +476,21 @@ export default function Home() {
 
     // Handle fresh file selection
     const handleFileSelect = useCallback(async (file: File) => {
+        if (browserUploadLimitBytes !== null && file.size > browserUploadLimitBytes) {
+            setErrorMessage(
+                `This hosted deployment can only receive uploads up to ${formatFileSize(browserUploadLimitBytes)} ` +
+                `before its serverless gateway rejects them. ${formatFileSize(file.size)} was not sent. ` +
+                'For a large MP4, run the app locally/self-hosted (bash dev.sh) so it can stream, compress, and split the media, or add direct object storage uploads to this hosted deployment.'
+            );
+            setRateLimitInfo(null);
+            setResumeState(null);
+            setResumeMayDuplicateCharge(false);
+            setPendingFile(null);
+            setProcessing(null);
+            setState('error');
+            return;
+        }
+
         // Check for saved progress
         const fileHash = await generateFileHash(file);
         const progressKey = `${selectedProvider}:${fileHash}`;
@@ -474,7 +518,7 @@ export default function Home() {
 
         // No saved progress - start fresh
         await processTranscription(file);
-    }, [processTranscription, selectedProvider]);
+    }, [browserUploadLimitBytes, processTranscription, selectedProvider]);
 
     // Handle resume button click
     const handleResume = useCallback(async () => {
@@ -551,7 +595,7 @@ export default function Home() {
                                     {providerOptions.map((provider) => (
                                         <button
                                             key={provider.name}
-                                            onClick={() => setSelectedProvider(provider.name)}
+                                            onClick={() => handleProviderSelection(provider.name)}
                                             disabled={state === 'processing'}
                                             className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${selectedProvider === provider.name
                                                 ? 'bg-indigo-600 text-white border-indigo-600'
@@ -605,6 +649,18 @@ export default function Home() {
                                         <span>
                                             OpenAI handles transcription and speaker diarization in the cloud, so your Mac does not run hot.
                                             For very large files that are split on the server, speaker labels can restart between chunks.
+                                        </span>
+                                    </div>
+                                )}
+
+                                {selectedProvider === 'groq' && !activeProvider?.supportsSpeakerDiarization && (
+                                    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-start gap-2">
+                                        <svg className="w-3.5 h-3.5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span>
+                                            Groq provides fast transcription and timestamps, but its current hosted speech models do not return speaker labels.
+                                            Choose OpenAI + Diarization or Local (Metal) when you need speaker separation.
                                         </span>
                                     </div>
                                 )}

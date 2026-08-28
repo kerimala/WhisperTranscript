@@ -19,7 +19,7 @@ export interface ValidationResult {
 /**
  * Check if a file type is supported for transcription
  */
-export function isValidFileType(file: File): boolean {
+export function isValidFileType(file: Pick<File, 'name' | 'type'>): boolean {
     // Check MIME type
     const mimeType = file.type.toLowerCase();
     if (SUPPORTED_AUDIO_TYPES.some(t => mimeType.includes(t.split('/')[1]))) {

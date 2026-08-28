@@ -130,7 +130,7 @@ class GroqTranscriptionProvider implements TranscriptionProvider {
                     response_format: 'verbose_json',
                     timestamp_granularities: ['segment'],
                     ...(language && { language }),
-                }) as VerboseTranscriptionResponse;
+                }, signal ? { signal } : undefined) as VerboseTranscriptionResponse;
 
                 console.log(`[provider:groq] success ${describeFile(file)} attempt=${attempt + 1} segments=${response.segments?.length ?? 0} language=${response.language || 'unknown'}`);
                 return {
@@ -453,30 +453,35 @@ export function getTranscriptionProviderInfo(name: TranscriptionProviderName): O
                 name: 'groq',
                 displayName: 'Groq',
                 model: 'whisper-large-v3-turbo',
+                supportsSpeakerDiarization: false,
             };
         case 'openai':
             return {
                 name: 'openai',
                 displayName: 'OpenAI',
                 model: 'whisper-1',
+                supportsSpeakerDiarization: false,
             };
         case 'openai_diarize':
             return {
                 name: 'openai_diarize',
                 displayName: 'OpenAI (Diarize)',
                 model: 'gpt-4o-transcribe-diarize',
+                supportsSpeakerDiarization: true,
             };
         case 'local':
             return {
                 name: 'local',
                 displayName: 'Local (Metal)',
                 model: 'whisper-large-v3-turbo',
+                supportsSpeakerDiarization: true,
             };
         default:
             return {
                 name,
                 displayName: name,
                 model: 'unknown',
+                supportsSpeakerDiarization: false,
             };
     }
 }

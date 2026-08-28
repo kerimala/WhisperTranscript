@@ -33,11 +33,17 @@ import {
     needsAudioSplitting,
     getAudioDuration,
     optimizeAudioForTranscription,
-    saveUploadedFile,
     splitAudioFile,
     readSegmentAsFile,
     cleanupTempFiles,
 } from '@/lib/audio-splitter';
+import {
+    createStreamingMultipartBody,
+    getBrowserUploadLimitBytes,
+    getMaxSourceUploadBytes,
+    MultipartUploadError,
+    receiveMultipartUpload,
+} from '@/lib/multipart-upload';
 import {
     getProviderSegmentDurationLimit,
     needsProviderDurationSplit,
@@ -194,6 +200,9 @@ interface ChunkFailure {
  * POST /api/transcribe
  */
 
+// fs, child_process, and the streaming multipart parser require the Node runtime.
+export const runtime = 'nodejs';
+
 // Allow long-running sequential diarization requests (up to 60 minutes).
 export const maxDuration = 3600;
 export async function POST(request: NextRequest): Promise<NextResponse<TranscriptionResult | TranscriptionError>> {
@@ -205,34 +214,34 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
     const warn = (message: string) => console.warn(`[transcribe:${requestId}] ${message}`);
 
     try {
-        const formData = await request.formData();
-
-        const file = formData.get('file') as File | null;
-        const language = formData.get('language') as string | null;
-        const providerRaw = (formData.get('provider') as string | null) ?? 'groq';
+        // Do not use request.formData() here: it buffers the whole original
+        // video in memory before the large-file ffmpeg path can run. Stream it
+        // directly to the request's private temp directory instead.
+        const upload = await receiveMultipartUpload(request);
+        tempDir = upload.tempDir;
+        const file = upload.file;
+        const getField = (name: string): string | null => upload.fields.get(name) ?? null;
+        const language = getField('language');
+        const providerRaw = getField('provider') ?? 'groq';
         const providerName = providerRaw.toLowerCase().trim();
-        const apiKeyOverride = (formData.get('apiKey') as string | null)?.trim() || undefined;
-        log(`request received provider=${providerName} language=${language || 'auto'} file="${file?.name || 'missing'}" size=${file ? formatMiB(file.size) : 'n/a'}`);
+        const apiKeyOverride = getField('apiKey')?.trim() || undefined;
+        log(`request received provider=${providerName} language=${language || 'auto'} file="${file.name}" size=${formatMiB(file.size)}`);
 
         // Local provider: proxy straight to Python backend and return its response
         if (providerName === 'local') {
-            if (!file) {
-                return errorResponse('No file provided', 400);
-            }
             const backendUrl = process.env.LOCAL_BACKEND_URL || 'http://127.0.0.1:8001';
             // UI field takes precedence; fall back to .env.local HF_TOKEN
             const hfToken =
-                (formData.get('hfToken') as string | null)?.trim() ||
+                getField('hfToken')?.trim() ||
                 (process.env.HF_TOKEN ?? '');
-            const minSpeakers = (formData.get('minSpeakers') as string | null) || '1';
-            const maxSpeakers = (formData.get('maxSpeakers') as string | null) || '10';
-
-            const proxyForm = new FormData();
-            proxyForm.append('file', file);
-            if (language) proxyForm.append('language', language);
-            if (hfToken) proxyForm.append('hf_token', hfToken);
-            proxyForm.append('min_speakers', minSpeakers);
-            proxyForm.append('max_speakers', maxSpeakers);
+            const minSpeakers = getField('minSpeakers') || '1';
+            const maxSpeakers = getField('maxSpeakers') || '10';
+            const proxyUpload = createStreamingMultipartBody(file, {
+                ...(language ? { language } : {}),
+                ...(hfToken ? { hf_token: hfToken } : {}),
+                min_speakers: minSpeakers,
+                max_speakers: maxSpeakers,
+            });
 
             let backendRes: Response;
             try {
@@ -241,9 +250,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 // can take 10-15+ minutes on a MacBook Air.
                 backendRes = await fetch(`${backendUrl}/transcribe`, {
                     method: 'POST',
-                    body: proxyForm,
+                    headers: { 'Content-Type': proxyUpload.contentType },
+                    body: proxyUpload.body,
                     signal: AbortSignal.timeout(30 * 60 * 1000),
-                });
+                    // Required by Node fetch for a streaming request body.
+                    duplex: 'half',
+                } as RequestInit & { duplex: 'half' });
             } catch (fetchErr) {
                 const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
                 if (msg.includes('TimeoutError') || msg.includes('timed out') || msg.includes('abort')) {
@@ -260,15 +272,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 );
             }
 
-            // Automatically save the result to the filesystem
+            // Automatically save the result to the filesystem. Read the body
+            // once so a persistence failure can still return the real backend
+            // response instead of an already-consumed stream.
+            const bodyText = await backendRes.text();
             try {
                 const fs = await import('fs/promises');
                 const path = await import('path');
                 const saveDir = path.join(process.cwd(), 'transcriptions');
                 await fs.mkdir(saveDir, { recursive: true });
 
-                // Parse the JSON body to save it properly
-                const bodyText = await backendRes.text();
                 const jsonResult = JSON.parse(bodyText);
                 log(`local backend responded status=${backendRes.status} duration_ms=${Date.now() - startedAt}`);
 
@@ -280,22 +293,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 await fs.writeFile(filePath, JSON.stringify(jsonResult, null, 2), 'utf-8');
                 log(`saved local result file="${filePath}"`);
 
-                // Return the response as normal
                 return NextResponse.json(jsonResult, { status: backendRes.status });
             } catch (err) {
-                console.error("Failed to automatically save transcription:", err);
-                // Return originally intended response if save fails
-                return new NextResponse(backendRes.body, {
+                warn(`failed to save or parse local result: ${err instanceof Error ? err.message : String(err)}`);
+                return new NextResponse(bodyText, {
                     status: backendRes.status,
                     headers: {
                         'Content-Type': 'application/json',
                     }
                 });
+            } finally {
+                if (tempDir) {
+                    await cleanupTempFiles(tempDir);
+                    tempDir = null;
+                }
             }
-        }
-
-        if (!file) {
-            return errorResponse('No file provided', 400);
         }
 
         if (!isValidFileType(file)) {
@@ -335,11 +347,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 `check_size=${sizeRequiresPreparation} duration_limit_seconds=${providerDurationLimit ?? 'none'}`
             );
 
-            const savedFile = await saveUploadedFile(file);
-            tempDir = savedFile.tempDir;
-
             try {
-                const optimized = await optimizeAudioForTranscription(savedFile.path, file.name);
+                const optimized = await optimizeAudioForTranscription(file.path, file.name);
                 const preparedPath = optimized.outputPath;
                 const preparedName = optimized.outputFileName;
                 const preparedMimeType = optimized.outputMimeType || file.type || 'audio/mpeg';
@@ -436,10 +445,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 let detectedLanguage: string | null = null;
                 let cumulativeDurationMs = 0;
 
-                const skipIndicesStr = formData.get('skipChunks') as string | null;
+                const skipIndicesStr = getField('skipChunks');
                 const requestedSkipIndices: number[] = skipIndicesStr ? JSON.parse(skipIndicesStr) : [];
 
-                const previousResultsStr = formData.get('previousResults') as string | null;
+                const previousResultsStr = getField('previousResults');
                 const previousResults: ChunkResult[] = previousResultsStr ? JSON.parse(previousResultsStr) : [];
 
                 // Only skip chunks backed by a valid saved result. Never trust a
@@ -592,7 +601,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                         : '';
                     const failureMessage = isNetworkFailure
                         ? `The provider connection failed at chunk ${chunkErrorState.chunkIndex + 1}/${splitResult.segments.length}.${completedMessage} ` +
-                            'Resuming may submit the failed chunk again and could incur a duplicate charge if OpenAI completed it before the connection was lost. ' +
+                            'Resuming may submit the failed chunk again and could incur a duplicate charge if the provider completed it before the connection was lost. ' +
                             chunkErrorState.message
                         : `Chunk ${chunkErrorState.chunkIndex + 1}/${splitResult.segments.length} failed.${completedMessage} ${chunkErrorState.message}`;
 
@@ -685,7 +694,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
             }
         }
 
-        const result = await provider.transcribe(file, language || undefined, request.signal);
+        // Direct provider attachments remain intentionally small (the 24 MB
+        // preparation threshold), so materializing this staged file here does
+        // not reintroduce the multi-gigabyte memory problem.
+        const directFile = await readSegmentAsFile(file.path, file.type || 'audio/mpeg');
+        const result = await provider.transcribe(directFile, language || undefined, request.signal);
         const createdAt = startTime.toISOString();
         const diarizedText = buildDiarizedText(result.segments, createdAt, provider.name, provider.model);
         log(`direct upload complete segments=${result.segments.length} language=${result.language || 'unknown'}`);
@@ -714,14 +727,28 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
             warn(`failed to save result automatically: ${err instanceof Error ? err.message : String(err)}`);
         }
 
+        if (tempDir) {
+            await cleanupTempFiles(tempDir);
+            tempDir = null;
+        }
         log(`request complete duration_ms=${Date.now() - startedAt} segments=${transcriptionResult.segments.length}`);
         return NextResponse.json(transcriptionResult);
     } catch (error) {
         if (splitTempDir) {
             await cleanupTempFiles(splitTempDir);
+            splitTempDir = null;
         }
         if (tempDir) {
             await cleanupTempFiles(tempDir);
+            tempDir = null;
+        }
+
+        if (error instanceof MultipartUploadError) {
+            warn(`upload rejected code=${error.code} message="${error.message}"`);
+            return errorResponse(error.message, error.status, {
+                code: error.code,
+                retryable: error.code !== 'source_upload_too_large' && error.code !== 'invalid_multipart_request',
+            });
         }
 
         console.error(`[transcribe:${requestId}] unhandled error:`, error);
@@ -741,6 +768,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
         }
 
         return errorResponse(message, 500);
+    } finally {
+        // Early validation responses (unsupported media, bad provider/key) are
+        // still reached after the streamed source has been staged.
+        if (splitTempDir) {
+            await cleanupTempFiles(splitTempDir);
+        }
+        if (tempDir) {
+            await cleanupTempFiles(tempDir);
+        }
     }
 }
 
@@ -749,10 +785,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
  */
 export async function GET(): Promise<NextResponse> {
     const providers = getAllTranscriptionProviders();
-    const configuredProviders = providers.filter(p => p.configured);
-    // Prefer cloud providers as default; only fall back to local if nothing else is configured
-    const defaultProvider: TranscriptionProviderName =
-        configuredProviders.find(p => p.name !== 'local')?.name || 'groq';
+    const browserUploadLimitBytes = getBrowserUploadLimitBytes();
+    const defaultProvider: TranscriptionProviderName = providers.find(
+        (provider) => provider.configured && provider.name !== 'local'
+    )?.name || 'local';
 
     return NextResponse.json({
         name: 'Whisper Transcription API',
@@ -761,7 +797,14 @@ export async function GET(): Promise<NextResponse> {
         defaultProvider,
         hfTokenConfigured: Boolean(process.env.HF_TOKEN),
         supportedFormats: [...SUPPORTED_EXTENSIONS],
-        maxFileSize: 'Unlimited (auto-split with ffmpeg)',
-        note: 'Oversized cloud uploads are compressed to smaller AAC audio first. OpenAI diarization uploads are also split when their duration exceeds the model-safe request limit.',
+        maxFileSize: `${(getMaxSourceUploadBytes() / 1024 / 1024 / 1024).toFixed(0)} GB on this server (streamed, then auto-split with ffmpeg)`,
+        upload: {
+            transport: 'stream-to-temp-disk',
+            maxSourceUploadBytes: getMaxSourceUploadBytes(),
+            // Set only when the host rejects bodies before this route handler.
+            browserUploadLimitBytes,
+            requiresDirectStorageForLargerFiles: browserUploadLimitBytes !== null,
+        },
+        note: 'Large uploads are streamed to temporary disk before compression and chunking. Groq returns transcription timestamps but not speaker labels. OpenAI diarization uploads are also split when their duration exceeds the model-safe request limit.',
     });
 }
