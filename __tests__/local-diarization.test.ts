@@ -34,7 +34,7 @@ describe('local diarization handoff', () => {
                     name: 'test.wav',
                     type: 'audio/wav',
                     size: 44,
-                    path: 'local_backend/test_audio.wav',
+                    path: __filename,
                 },
                 segments: [{ index: 0, start_ms: 0, end_ms: 500, text: 'Hello' }],
                 words: [{ word: 'Hello', start_ms: 0, end_ms: 500 }],
@@ -57,7 +57,7 @@ describe('local diarization handoff', () => {
 
     it('requires the speaker token before uploading audio', async () => {
         await expect(diarizeExistingTranscriptLocally({
-            file: { name: 'test.wav', type: 'audio/wav', size: 44, path: 'local_backend/test_audio.wav' },
+            file: { name: 'test.wav', type: 'audio/wav', size: 44, path: __filename },
             segments: [],
             hfToken: '',
         })).rejects.toThrow('Hugging Face token');

@@ -337,7 +337,6 @@ export function getAdaptiveSegmentDuration(
         MIN_SEGMENT_DURATION,
         Math.min(MAX_SEGMENT_DURATION, maxSegmentDurationSec)
     );
-
     if (!durationSec || durationSec <= 0) {
         return Math.min(DEFAULT_SEGMENT_DURATION, effectiveMaxDuration);
     }

@@ -18,6 +18,7 @@ interface ProgressIndicatorProps {
     fileSize: number;
     stage: 'uploading' | 'processing' | 'complete' | 'error';
     uploadProgress?: number;
+    processingProgress?: number;
     serverStage?: TranscriptionProgressStage;
     completedChunks?: number;
     totalChunks?: number;
@@ -35,6 +36,7 @@ interface ProgressIndicatorProps {
         optional?: boolean;
     }>;
     currentPipelineStep?: PipelineStepId;
+    reloadSafe?: boolean;
     onCancel?: () => void;
 }
 
@@ -92,6 +94,7 @@ export default function ProgressIndicator({
     fileSize,
     stage,
     uploadProgress,
+    processingProgress,
     serverStage,
     completedChunks = 0,
     totalChunks,
@@ -105,6 +108,7 @@ export default function ProgressIndicator({
     pipelineSummary,
     pipelineSteps,
     currentPipelineStep,
+    reloadSafe = false,
     onCancel,
 }: ProgressIndicatorProps) {
     const isUploading = stage === 'uploading';
@@ -116,7 +120,9 @@ export default function ProgressIndicator({
             ? Math.min(100, Math.max(0, uploadProgress || 0))
             : hasMeasuredChunkProgress && totalChunks
                 ? Math.round((Math.min(completedChunks, totalChunks) / totalChunks) * 100)
-                : undefined;
+                : processingProgress === undefined
+                    ? undefined
+                    : Math.min(100, Math.max(0, processingProgress));
     const isIndeterminate = progressValue === undefined && stage === 'processing';
     const statusLabel = getStageLabel(stage, serverStage);
     const activeStepIndex = pipelineSteps?.findIndex((step) => step.id === currentPipelineStep) ?? -1;
@@ -222,6 +228,15 @@ export default function ProgressIndicator({
                         </p>
                     )}
                 </div>
+
+                {reloadSafe && (stage === 'uploading' || stage === 'processing') && (
+                    <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                        <svg className="mt-0.5 h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5-2a9 9 0 11-16.64-4.8" />
+                        </svg>
+                        <span>This job is running in the local backend. You can reload or close this page and reconnect later.</span>
+                    </div>
+                )}
 
                 <dl className="mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70 sm:grid-cols-4">
                     <div className="border-b border-r border-slate-200 px-3 py-3 sm:border-b-0">

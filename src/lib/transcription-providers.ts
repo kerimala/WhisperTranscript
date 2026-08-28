@@ -392,12 +392,14 @@ class LocalBackendProvider implements TranscriptionProvider {
     private readonly hfToken: string;
     private readonly minSpeakers: number;
     private readonly maxSpeakers: number;
+    private readonly diarize: boolean;
 
-    constructor(options: { hfToken?: string; minSpeakers?: number; maxSpeakers?: number; backendUrl?: string } = {}) {
+    constructor(options: { hfToken?: string; minSpeakers?: number; maxSpeakers?: number; backendUrl?: string; diarize?: boolean } = {}) {
         this.backendUrl = options.backendUrl || 'http://127.0.0.1:8001';
         this.hfToken = options.hfToken || '';
         this.minSpeakers = options.minSpeakers ?? 1;
         this.maxSpeakers = options.maxSpeakers ?? 10;
+        this.diarize = options.diarize ?? true;
     }
 
     async transcribe(file: File, language?: string, signal?: AbortSignal): Promise<ChunkResult> {
@@ -407,7 +409,8 @@ class LocalBackendProvider implements TranscriptionProvider {
         if (language) {
             form.append('language', language);
         }
-        if (this.hfToken) {
+        form.append('diarize', String(this.diarize));
+        if (this.diarize && this.hfToken) {
             form.append('hf_token', this.hfToken);
         }
         form.append('min_speakers', String(this.minSpeakers));
@@ -534,6 +537,7 @@ export interface LocalProviderOptions {
     hfToken?: string;
     minSpeakers?: number;
     maxSpeakers?: number;
+    diarize?: boolean;
 }
 
 export function createTranscriptionProvider(

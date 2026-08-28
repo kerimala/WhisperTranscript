@@ -111,10 +111,12 @@ The backend exposes one stable HTTP API and selects an engine at runtime:
 
 `GET /health` reports the detected hardware, selected engine, device, model, compute type, fallback candidates, and diarization capability. Set `WHISPER_ENGINE` to override automatic selection.
 
-Speaker diarization is optional and installed separately because pyannote and Torch are large:
+Speaker diarization is optional and installed in a separate environment because
+Pyannote/Torch and Faster Whisper use different CUDA library stacks:
 
 ```bash
-local_backend/.venv/bin/pip install -r local_backend/requirements/diarization.txt
+python3 -m venv local_backend/.venv-diarization
+local_backend/.venv-diarization/bin/pip install -r local_backend/requirements/diarization.txt
 ```
 
 For AMD or Intel Vulkan, build `whisper.cpp` with `GGML_VULKAN=1`, then configure `WHISPER_CPP_BIN` and `WHISPER_CPP_MODEL`. AMD ROCm builds can use `GGML_HIP=1` with `WHISPER_ENGINE=rocm`.

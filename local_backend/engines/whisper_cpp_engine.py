@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .base import EngineMetadata, TranscriptionEngine
+from .base import EngineMetadata, ProgressCallback, TranscriptionEngine
 
 
 class WhisperCppEngine(TranscriptionEngine):
@@ -29,7 +29,14 @@ class WhisperCppEngine(TranscriptionEngine):
             compute_type="quantized",
         )
 
-    def transcribe(self, audio_path: str, language: str | None = None) -> dict:
+    def transcribe(
+        self,
+        audio_path: str,
+        language: str | None = None,
+        progress_callback: ProgressCallback | None = None,
+    ) -> dict:
+        if progress_callback:
+            progress_callback(5, "Starting whisper.cpp...")
         with tempfile.TemporaryDirectory(prefix="whisper_cpp_") as tmp_dir:
             output_prefix = os.path.join(tmp_dir, "transcript")
             command = [
@@ -52,7 +59,10 @@ class WhisperCppEngine(TranscriptionEngine):
             if not json_path.exists():
                 raise RuntimeError("whisper.cpp did not create the expected JSON output")
             with json_path.open("r", encoding="utf-8") as handle:
-                return normalize_whisper_cpp_result(json.load(handle), language)
+                result = normalize_whisper_cpp_result(json.load(handle), language)
+            if progress_callback:
+                progress_callback(100, "Audio transcription complete.")
+            return result
 
     def unload(self) -> None:
         # The CLI exits after every request, so it holds no persistent model memory.

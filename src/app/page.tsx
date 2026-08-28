@@ -20,6 +20,9 @@ import {
     ChunkResult,
     TranscriptionResponse,
     LocalRuntimeStatus,
+    LocalTranscriptionJob,
+    SavedLocalJob,
+    TranscriptionHistoryItem,
 } from '@/lib/types';
 import {
     generateFileHash,
@@ -60,6 +63,7 @@ interface ProcessingState {
     fileSize: number;
     stage: 'uploading' | 'processing' | 'complete' | 'error';
     uploadProgress?: number;
+    processingProgress?: number;
     message?: string;
     serverStage?: TranscriptionProgressStage;
     completedChunks?: number;
@@ -131,8 +135,48 @@ const PROVIDER_LINKS: Record<UIProviderName, string> = {
 };
 
 const DIRECT_UPLOAD_LIMIT_BYTES = 24 * 1024 * 1024;
+const ACTIVE_LOCAL_JOB_KEY = 'whisper-for-files:active-local-job';
 
-function buildPipelinePlan(fileSize: number, provider: UIProviderName): PipelinePlan {
+function formatHistoryDuration(durationMs: number | null): string | null {
+    if (!durationMs) return null;
+    const totalMinutes = Math.floor(durationMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return hours > 0 ? `${hours}h ${minutes}m` : `${Math.max(1, minutes)}m`;
+}
+
+function formatProviderName(provider: TranscriptionProviderName | null): string {
+    if (provider === 'openai_diarize') return 'OpenAI diarize';
+    if (provider === 'openai') return 'OpenAI';
+    if (provider === 'groq') return 'Groq';
+    if (provider === 'local') return 'Local';
+    return 'Transcript';
+}
+
+function readSavedLocalJob(): SavedLocalJob | null {
+    if (typeof window === 'undefined') return null;
+    try {
+        const parsed = JSON.parse(window.localStorage.getItem(ACTIVE_LOCAL_JOB_KEY) || 'null');
+        if (parsed && typeof parsed.id === 'string' && typeof parsed.fileName === 'string') {
+            return parsed as SavedLocalJob;
+        }
+    } catch {
+        window.localStorage.removeItem(ACTIVE_LOCAL_JOB_KEY);
+    }
+    return null;
+}
+
+function clearSavedLocalJob(): void {
+    if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(ACTIVE_LOCAL_JOB_KEY);
+    }
+}
+
+function buildPipelinePlan(
+    fileSize: number,
+    provider: UIProviderName,
+    localDiarizationEnabled = false
+): PipelinePlan {
     const isHybrid = provider === 'groq_local_diarize';
     const cloudSteps: PipelineStep[] = [
         { id: 'upload', label: 'Upload file' },
@@ -142,11 +186,19 @@ function buildPipelinePlan(fileSize: number, provider: UIProviderName): Pipeline
 
     if (provider === 'local') {
         return {
-            summary: 'Local mode: file is sent to your local backend, then transcribed (and optionally diarized) on your machine.',
-            steps: [
-                { id: 'upload', label: 'Upload to local backend' },
-                { id: 'transcribe', label: 'Transcribe locally' },
-            ],
+            summary: localDiarizationEnabled
+                ? 'Local mode: Whisper transcribes first, then Pyannote identifies speakers on this machine.'
+                : 'Local transcription only: Whisper runs locally and Pyannote is skipped completely.',
+            steps: localDiarizationEnabled
+                ? [
+                    { id: 'upload', label: 'Upload to local backend' },
+                    { id: 'transcribe', label: 'Transcribe locally' },
+                    { id: 'diarize', label: 'Identify speakers' },
+                ]
+                : [
+                    { id: 'upload', label: 'Upload to local backend' },
+                    { id: 'transcribe', label: 'Transcribe locally' },
+                ],
         };
     }
 
@@ -175,6 +227,7 @@ function getProcessingMessage(step: PipelineStepId, provider: UIProviderName): s
     if (step === 'upload') return 'Uploading audio file...';
     if (step === 'compress') return 'Optimizing audio size on server...';
     if (step === 'split') return 'Splitting audio into provider-safe chunks...';
+    if (step === 'diarize') return 'Identifying speakers...';
     if (provider === 'openai_diarize') return 'Transcribing and diarizing speakers...';
     if (provider === 'groq_local_diarize') return 'Transcribing with Groq, then detecting speakers locally...';
     return 'Transcribing audio...';
@@ -295,15 +348,18 @@ export default function Home() {
         local: '',
     });
     const [localHfToken, setLocalHfToken] = useState('');
+    const [localDiarizationEnabled, setLocalDiarizationEnabled] = useState(false);
     const [hfTokenConfigured, setHfTokenConfigured] = useState(false);
     const [backendRunning, setBackendRunning] = useState<boolean | null>(null);
     const [localRuntime, setLocalRuntime] = useState<LocalRuntimeStatus | null>(null);
     const [selectedLanguage, setSelectedLanguage] = useState('auto');
-    const [history, setHistory] = useState<any[]>([]);
+    const [history, setHistory] = useState<TranscriptionHistoryItem[]>([]);
     const [browserUploadLimitBytes, setBrowserUploadLimitBytes] = useState<number | null>(null);
     const [clockNowMs, setClockNowMs] = useState(() => Date.now());
     const uploadRequestRef = useRef<XMLHttpRequest | null>(null);
     const progressPollRef = useRef<number | null>(null);
+    const [activeLocalJobId, setActiveLocalJobId] = useState<string | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const providerOptions = providers.length > 0 ? providers : FALLBACK_PROVIDERS;
     const activeProvider = providerOptions.find(p => p.name === selectedProvider) || providerOptions[0];
@@ -338,25 +394,139 @@ export default function Home() {
         return () => window.clearInterval(interval);
     }, [state, processing?.startedAtMs]);
 
-    useEffect(() => {
-        let active = true;
-
-        async function loadHistory() {
-            try {
-                const res = await fetch('/api/transcriptions');
-                if (!res.ok) return;
-                const data = await res.json();
-                if (active) {
-                    setHistory(data.transcriptions || []);
-                }
-            } catch (err) {
-                console.error("Failed to load history", err);
-            }
+    const loadHistory = useCallback(async () => {
+        try {
+            const res = await fetch('/api/transcriptions');
+            if (!res.ok) return;
+            const data = await res.json();
+            setHistory(data.transcriptions || []);
+        } catch (err) {
+            console.error('Failed to load history', err);
         }
+    }, []);
 
-        void loadHistory();
-        return () => { active = false; };
-    }, [state]); // Reload when state changes (completed transcription)
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            void loadHistory();
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [state, loadHistory]); // Reload when state changes (completed transcription)
+
+    // Reconnect to an existing local backend job after a page reload.
+    useEffect(() => {
+        const saved = readSavedLocalJob();
+        if (!saved) return;
+
+        const timer = window.setTimeout(() => {
+            setSelectedProvider('local');
+            setLocalDiarizationEnabled(Boolean(saved.diarizationEnabled));
+            setState('processing');
+            setProcessing({
+                jobId: saved.id,
+                fileName: saved.fileName,
+                fileSize: saved.fileSize,
+                stage: 'processing',
+                processingProgress: 2,
+                message: 'Reconnecting to local transcription job...',
+                providerName: 'local',
+                providerModel: 'Local Whisper',
+                startedAtMs: Date.parse(saved.createdAt) || Date.now(),
+                pipelinePlan: buildPipelinePlan(saved.fileSize, 'local', Boolean(saved.diarizationEnabled)),
+                currentPipelineStep: 'transcribe',
+            });
+            setActiveLocalJobId(saved.id);
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, []);
+
+    // Poll the real backend progress. The job ID remains in localStorage until
+    // the backend confirms a terminal state.
+    useEffect(() => {
+        if (!activeLocalJobId) return;
+        let active = true;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+
+        const failJob = (message: string) => {
+            clearSavedLocalJob();
+            setActiveLocalJobId(null);
+            setErrorMessage(message);
+            setState('error');
+            setProcessing(null);
+        };
+
+        const poll = async () => {
+            try {
+                const response = await fetch(`/api/local-jobs/${activeLocalJobId}`, { cache: 'no-store' });
+                const job = await response.json() as LocalTranscriptionJob & { detail?: string };
+                if (!active) return;
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        failJob(job.detail || 'The backend restarted and no longer knows this in-progress job.');
+                        return;
+                    }
+                    setProcessing(prev => prev ? {
+                        ...prev,
+                        message: 'Backend temporarily unavailable. Reconnecting...',
+                    } : null);
+                    timer = setTimeout(poll, 2000);
+                    return;
+                }
+
+                setProcessing(prev => prev ? {
+                    ...prev,
+                    fileName: job.file_name || prev.fileName,
+                    fileSize: job.file_size || prev.fileSize,
+                    stage: job.status === 'completed' ? 'complete' : 'processing',
+                    processingProgress: Math.max(0, Math.min(100, job.progress)),
+                    message: job.message,
+                    currentPipelineStep: job.message.toLowerCase().includes('speaker')
+                        ? 'diarize'
+                        : 'transcribe',
+                } : null);
+
+                if (job.status === 'completed') {
+                    if (!job.result) {
+                        failJob('The backend completed without returning a result.');
+                        return;
+                    }
+                    clearSavedLocalJob();
+                    setActiveLocalJobId(null);
+                    setResult(job.result);
+                    setPendingFile(null);
+                    setState('complete');
+                    setProcessing(null);
+                    await loadHistory();
+                    return;
+                }
+                if (job.status === 'failed') {
+                    failJob(job.error || job.message || 'Local transcription failed.');
+                    return;
+                }
+                if (job.status === 'cancelled') {
+                    clearSavedLocalJob();
+                    setActiveLocalJobId(null);
+                    setState('idle');
+                    setProcessing(null);
+                    return;
+                }
+            } catch (error) {
+                if (!active) return;
+                setProcessing(prev => prev ? {
+                    ...prev,
+                    message: 'Connection interrupted. Reconnecting to the local backend...',
+                } : null);
+                timer = setTimeout(poll, 2000);
+                return;
+            }
+            timer = setTimeout(poll, 1000);
+        };
+
+        void poll();
+        return () => {
+            active = false;
+            if (timer) clearTimeout(timer);
+        };
+    }, [activeLocalJobId, loadHistory]);
 
     // Load provider metadata
     useEffect(() => {
@@ -373,7 +543,7 @@ export default function Home() {
                 if (Array.isArray(data.providers)) {
                     setProviders(data.providers as UIProviderInfo[]);
                 }
-                if (typeof data.defaultProvider === 'string' && isUIProviderName(data.defaultProvider)) {
+                if (!readSavedLocalJob() && typeof data.defaultProvider === 'string' && isUIProviderName(data.defaultProvider)) {
                     setSelectedProvider(data.defaultProvider);
                 }
                 if (typeof data.hfTokenConfigured === 'boolean') {
@@ -446,6 +616,86 @@ export default function Home() {
         return () => clearInterval(timer);
     }, [retryCountdown]);
 
+    const startLocalTranscription = useCallback(async (file: File) => {
+        if (localDiarizationEnabled && !hfTokenConfigured && !localHfToken.trim()) {
+            setErrorMessage('Speaker diarization needs a Hugging Face token. Add one or choose Transcription only.');
+            setState('error');
+            setPendingFile(file);
+            return;
+        }
+        const pipelinePlan = buildPipelinePlan(file.size, 'local', localDiarizationEnabled);
+        setState('processing');
+        setResult(null);
+        setErrorMessage(null);
+        setRateLimitInfo(null);
+        setPendingFile(file);
+        abortControllerRef.current = new AbortController();
+        setProcessing({
+            jobId: `local-upload-${Date.now()}`,
+            fileName: file.name,
+            fileSize: file.size,
+            stage: 'uploading',
+            uploadProgress: 5,
+            message: 'Uploading audio to the local backend...',
+            providerName: 'local',
+            providerModel: 'Local Whisper',
+            startedAtMs: Date.now(),
+            pipelinePlan,
+            currentPipelineStep: 'upload',
+        });
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            if (selectedLanguage !== 'auto') {
+                formData.append('language', selectedLanguage);
+            }
+            if (localHfToken.trim()) {
+                formData.append('hfToken', localHfToken.trim());
+            }
+            formData.append('diarize', String(localDiarizationEnabled));
+
+            const response = await fetch('/api/local-jobs', {
+                method: 'POST',
+                body: formData,
+                signal: abortControllerRef.current.signal,
+            });
+            const payload = await response.json() as LocalTranscriptionJob | { error: true; message: string };
+            if (!response.ok || !('id' in payload)) {
+                throw new Error(payload.message || 'Could not start the local transcription job.');
+            }
+            const job = payload;
+
+            const saved: SavedLocalJob = {
+                id: job.id,
+                fileName: job.file_name || file.name,
+                fileSize: job.file_size || file.size,
+                createdAt: job.created_at || new Date().toISOString(),
+                diarizationEnabled: job.diarization_enabled ?? localDiarizationEnabled,
+            };
+            window.localStorage.setItem(ACTIVE_LOCAL_JOB_KEY, JSON.stringify(saved));
+            setProcessing(prev => prev ? {
+                ...prev,
+                jobId: job.id,
+                stage: 'processing',
+                processingProgress: job.progress,
+                message: job.message,
+                currentPipelineStep: 'transcribe',
+            } : null);
+            setActiveLocalJobId(job.id);
+        } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                setState('idle');
+                setProcessing(null);
+                return;
+            }
+            const message = error instanceof Error ? error.message : 'Could not start the local transcription job.';
+            setErrorMessage(message);
+            setState('error');
+            setProcessing(null);
+        }
+    }, [hfTokenConfigured, localDiarizationEnabled, localHfToken, selectedLanguage]);
+
     // Core transcription function that handles both fresh and resume requests
     const processTranscription = useCallback(async (
         file: File,
@@ -455,6 +705,10 @@ export default function Home() {
             durationOffset: number;
         }
     ) => {
+        if (selectedProvider === 'local') {
+            await startLocalTranscription(file);
+            return;
+        }
         const providerApiKey = providerApiKeys[selectedProvider] || '';
         const fileHash = await generateFileHash(file);
         const progressKey = `${selectedProvider}:${fileHash}`;
@@ -518,12 +772,11 @@ export default function Home() {
             }
 
             // Local runtime and local-speaker extras
-            if (selectedProvider === 'local' || selectedProvider === 'groq_local_diarize') {
+            if (selectedProvider === 'groq_local_diarize') {
                 if (localHfToken.trim()) {
                     formData.append('hfToken', localHfToken.trim());
                 }
             }
-
             // Add resume data if resuming
             if (resumeData) {
                 formData.append('skipChunks', JSON.stringify(resumeData.skipChunks));
@@ -711,6 +964,7 @@ export default function Home() {
         providerApiKeys,
         selectedLanguage,
         selectedProvider,
+        startLocalTranscription,
         stopProgressPolling,
     ]);
 
@@ -785,13 +1039,29 @@ export default function Home() {
         await processTranscription(pendingFile);
     }, [pendingFile, resumeState, processTranscription]);
 
-    const handleCancel = useCallback(() => {
+    const handleCancel = useCallback(async () => {
+        if (activeLocalJobId) {
+            setProcessing(prev => prev ? {
+                ...prev,
+                message: 'Requesting backend cancellation...',
+            } : null);
+            try {
+                await fetch(`/api/local-jobs/${activeLocalJobId}`, { method: 'DELETE' });
+            } catch {
+                setProcessing(prev => prev ? {
+                    ...prev,
+                    message: 'Cancellation could not be confirmed; reconnecting to backend...',
+                } : null);
+            }
+            return;
+        }
         uploadRequestRef.current?.abort();
         uploadRequestRef.current = null;
+        abortControllerRef.current?.abort();
         stopProgressPolling();
         setState('idle');
         setProcessing(null);
-    }, [stopProgressPolling]);
+    }, [activeLocalJobId, stopProgressPolling]);
 
     const handleReset = useCallback(() => {
         stopProgressPolling();
@@ -1025,36 +1295,74 @@ export default function Home() {
                                             </div>
                                         )}
 
-                                        {/* HuggingFace token */}
-                                        {hfTokenConfigured ? (
-                                            <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800 flex items-center gap-2">
-                                                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                </svg>
-                                                Speaker diarization active
-                                                <span className="text-green-600">(HF_TOKEN set in .env.local)</span>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-1.5">
-                                                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-start gap-2">
-                                                    <svg className="w-3.5 h-3.5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                    </svg>
-                                                    <span>
-                                                        No HuggingFace token — speaker diarization will be skipped.
-                                                        Enter a token below or add <code className="font-mono font-semibold">HF_TOKEN=hf_…</code> to <code className="font-mono">.env.local</code>.
-                                                    </span>
-                                                </div>
-                                                <input
-                                                    id="hfToken"
-                                                    type="password"
-                                                    value={localHfToken}
-                                                    onChange={(e) => setLocalHfToken(e.target.value)}
+                                        {/* Local processing mode */}
+                                        <div>
+                                            <p className="mb-1.5 text-xs font-medium text-slate-600">Local processing mode</p>
+                                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="group" aria-label="Local processing mode">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setLocalDiarizationEnabled(false)}
                                                     disabled={state === 'processing'}
-                                                    placeholder="hf_… (paste token for this session)"
-                                                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                />
+                                                    aria-pressed={!localDiarizationEnabled}
+                                                    className={`rounded-xl border px-3 py-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${!localDiarizationEnabled
+                                                        ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100'
+                                                        : 'border-slate-200 bg-white hover:border-indigo-300'
+                                                        }`}
+                                                >
+                                                    <span className="flex items-center justify-between gap-2">
+                                                        <span className="text-sm font-semibold text-slate-800">Transcription only</span>
+                                                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Fast</span>
+                                                    </span>
+                                                    <span className="mt-1 block text-xs leading-5 text-slate-500">Whisper only. Pyannote is not started.</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setLocalDiarizationEnabled(true)}
+                                                    disabled={state === 'processing'}
+                                                    aria-pressed={localDiarizationEnabled}
+                                                    className={`rounded-xl border px-3 py-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-50 ${localDiarizationEnabled
+                                                        ? 'border-cyan-500 bg-cyan-50 ring-2 ring-cyan-100'
+                                                        : 'border-slate-200 bg-white hover:border-cyan-300'
+                                                        }`}
+                                                >
+                                                    <span className="text-sm font-semibold text-slate-800">+ Speaker diarization</span>
+                                                    <span className="mt-1 block text-xs leading-5 text-slate-500">Whisper plus Pyannote. Much slower locally.</span>
+                                                </button>
                                             </div>
+                                        </div>
+
+                                        {/* HuggingFace token is only relevant when diarization is requested. */}
+                                        {localDiarizationEnabled && (
+                                            hfTokenConfigured ? (
+                                                <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800 flex items-center gap-2">
+                                                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                    Speaker diarization ready
+                                                    <span className="text-green-600">(HF_TOKEN set in .env.local)</span>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 flex items-start gap-2">
+                                                        <svg className="w-3.5 h-3.5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
+                                                        <span>
+                                                            Diarization needs a Hugging Face token.
+                                                            Enter one below or add <code className="font-mono font-semibold">HF_TOKEN=hf_…</code> to <code className="font-mono">.env.local</code>.
+                                                        </span>
+                                                    </div>
+                                                    <input
+                                                        id="hfToken"
+                                                        type="password"
+                                                        value={localHfToken}
+                                                        onChange={(e) => setLocalHfToken(e.target.value)}
+                                                        disabled={state === 'processing'}
+                                                        placeholder="hf_… (paste token for this session)"
+                                                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    />
+                                                </div>
+                                            )
                                         )}
 
                                         {/* Language selection */}
@@ -1108,6 +1416,7 @@ export default function Home() {
                                 fileSize={processing.fileSize}
                                 stage={processing.stage}
                                 uploadProgress={processing.uploadProgress}
+                                processingProgress={processing.processingProgress}
                                 serverStage={processing.serverStage}
                                 message={processing.message}
                                 completedChunks={processing.completedChunks}
@@ -1121,6 +1430,7 @@ export default function Home() {
                                 pipelineSummary={processing.pipelinePlan?.summary}
                                 pipelineSteps={processing.pipelinePlan?.steps}
                                 currentPipelineStep={processing.currentPipelineStep}
+                                reloadSafe={Boolean(activeLocalJobId)}
                                 onCancel={handleCancel}
                             />
                         )}
@@ -1305,14 +1615,56 @@ export default function Home() {
                                                     console.error("Failed to load past transcription:", err);
                                                 }
                                             }}
-                                            className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 transition-all group flex flex-col gap-1"
+                                            className="group w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md hover:shadow-indigo-100/60"
                                         >
-                                            <div className="font-medium text-slate-700 text-sm truncate group-hover:text-indigo-700">
-                                                {item.originalName}
+                                            <div className="flex items-start gap-3">
+                                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.hasDiarization ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                    {item.hasDiarization ? (
+                                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.36-1.86M17 20H7m10 0v-2c0-.66-.13-1.28-.36-1.86M7 20H2v-2a3 3 0 015.36-1.86M7 20v-2c0-.66.13-1.28.36-1.86m0 0a5 5 0 019.28 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                        </svg>
+                                                    ) : (
+                                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.1-1.34 2-3 2s-3-.9-3-2 1.34-2 3-2 3 .9 3 2zm12-3c0 1.1-1.34 2-3 2s-3-.9-3-2 1.34-2 3-2 3 .9 3 2zM9 10l12-3" />
+                                                        </svg>
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-sm font-semibold text-slate-800 group-hover:text-indigo-700">
+                                                        {item.originalName}
+                                                    </div>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                                                            {formatProviderName(item.provider)}
+                                                        </span>
+                                                        {item.speakerCount > 0 && (
+                                                            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                                                                {item.speakerCount} speakers
+                                                            </span>
+                                                        )}
+                                                        {item.language && (
+                                                            <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-cyan-700">
+                                                                {item.language}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="flex items-center justify-between text-xs text-slate-500">
-                                                <span>{new Date(item.created_at).toLocaleDateString()}</span>
-                                                <span>{(item.sizeBytes / 1024).toFixed(1)} KB</span>
+
+                                            {item.previewText && (
+                                                <p
+                                                    className="mt-3 overflow-hidden text-xs leading-5 text-slate-500"
+                                                    style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}
+                                                >
+                                                    {item.previewText}
+                                                </p>
+                                            )}
+
+                                            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-400">
+                                                <span>{new Date(item.created_at).toLocaleDateString()} · {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                <span className="font-medium text-slate-500">
+                                                    {formatHistoryDuration(item.durationMs) || `${item.segmentCount} segments`}
+                                                </span>
                                             </div>
                                         </button>
                                     ))

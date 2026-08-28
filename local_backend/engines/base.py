@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Callable
+
+
+ProgressCallback = Callable[[float, str], None]
 
 
 class EngineUnavailableError(RuntimeError):
@@ -39,7 +42,12 @@ class TranscriptionEngine(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def transcribe(self, audio_path: str, language: str | None = None) -> dict:
+    def transcribe(
+        self,
+        audio_path: str,
+        language: str | None = None,
+        progress_callback: ProgressCallback | None = None,
+    ) -> dict:
         raise NotImplementedError
 
     @abstractmethod

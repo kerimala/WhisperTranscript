@@ -13,12 +13,13 @@ set -uo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$PROJECT_DIR/local_backend"
 VENV="$BACKEND_DIR/.venv"
+DIARIZATION_VENV="$BACKEND_DIR/.venv-diarization"
 
 # ── colours ──────────────────────────────────────────────────────────────────
 CYAN=$'\033[1;36m'; GREEN=$'\033[1;32m'; YELLOW=$'\033[1;33m'
 RED=$'\033[0;31m'; DIM=$'\033[2m'; RESET=$'\033[0m'
 
-die()  { printf '%s✗  %s%s\n' "$RED" "$*" "$RESET" >&2; kill 0 2>/dev/null; exit 1; }
+die()  { printf '%s✗  %s%s\n' "$RED" "$*" "$RESET" >&2; trap - INT TERM; kill 0 2>/dev/null; exit 1; }
 ok()   { printf '%s✓  %s%s\n' "$GREEN" "$*" "$RESET"; }
 info() { printf '%s▶  %s%s\n' "$YELLOW" "$*" "$RESET"; }
 
@@ -30,6 +31,7 @@ echo ""
 
 # ── 1. Kill the whole process group when the user hits Ctrl+C ────────────────
 cleanup() {
+    trap - INT TERM
     printf '\n%s  Shutting everything down …%s\n' "$YELLOW" "$RESET"
     # kill 0 = send SIGTERM to every process in this process group
     kill 0 2>/dev/null
@@ -116,7 +118,7 @@ fi
 
 # CTranslate2 needs the pip-installed CUDA libraries on its loader path.
 if [[ "$PROFILE" == "nvidia-cuda" ]]; then
-    CUDA_LIBRARY_PATH=$("$VENV/bin/python" -c 'import os, nvidia.cublas.lib, nvidia.cudnn.lib; print(os.path.dirname(nvidia.cublas.lib.__file__) + ":" + os.path.dirname(nvidia.cudnn.lib.__file__))') \
+    CUDA_LIBRARY_PATH=$("$VENV/bin/python" -c 'import nvidia.cublas.lib, nvidia.cudnn.lib; print(next(iter(nvidia.cublas.lib.__path__)) + ":" + next(iter(nvidia.cudnn.lib.__path__)))') \
         || die "Could not resolve the CUDA runtime libraries"
     export LD_LIBRARY_PATH="$CUDA_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
@@ -128,11 +130,13 @@ if [[ -z "${HF_TOKEN:-}" ]] && [[ -f "$PROJECT_DIR/.env.local" ]]; then
     [[ -n "$_hf_val" ]] && export HF_TOKEN="$_hf_val"
 fi
 
-if [[ -n "${HF_TOKEN:-}" ]] && "$VENV/bin/python" -c 'import pyannote.audio' 2>/dev/null; then
+if [[ -n "${HF_TOKEN:-}" ]] && "$DIARIZATION_VENV/bin/python" -c 'import pyannote.audio' 2>/dev/null; then
     ok "HF_TOKEN and Pyannote found  (speaker diarization available)"
 elif [[ -n "${HF_TOKEN:-}" ]]; then
     printf '%s⚠   HF_TOKEN found, but optional Pyannote dependencies are not installed.%s\n' "$YELLOW" "$RESET"
-    printf '    Install with: %s/bin/pip install -r %s/requirements/diarization.txt\n' "$VENV" "$BACKEND_DIR"
+    printf '    Install in an isolated venv to avoid CUDA conflicts:\n'
+    printf '      python3 -m venv %s\n' "$DIARIZATION_VENV"
+    printf '      %s/bin/pip install -r %s/requirements/diarization.txt\n' "$DIARIZATION_VENV" "$BACKEND_DIR"
 else
     printf '%s⚠   HF_TOKEN not set – diarization disabled.%s\n' "$YELLOW" "$RESET"
     printf '    Add  HF_TOKEN=hf_…  to  .env.local  to enable it.\n'

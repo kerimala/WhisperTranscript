@@ -3,7 +3,7 @@ from __future__ import annotations
 import gc
 import os
 
-from .base import EngineMetadata, TranscriptionEngine
+from .base import EngineMetadata, ProgressCallback, TranscriptionEngine
 
 
 class MlxWhisperEngine(TranscriptionEngine):
@@ -25,16 +25,28 @@ class MlxWhisperEngine(TranscriptionEngine):
             compute_type="float16",
         )
 
-    def transcribe(self, audio_path: str, language: str | None = None) -> dict:
+    def transcribe(
+        self,
+        audio_path: str,
+        language: str | None = None,
+        progress_callback: ProgressCallback | None = None,
+    ) -> dict:
         import mlx_whisper
 
+        if progress_callback:
+            progress_callback(2, "Loading MLX Whisper model...")
         kwargs: dict = {
             "path_or_hf_repo": self.model,
             "verbose": False,
         }
         if language:
             kwargs["language"] = language
-        return mlx_whisper.transcribe(audio_path, **kwargs)
+        if progress_callback:
+            progress_callback(8, "Transcribing audio with MLX...")
+        result = mlx_whisper.transcribe(audio_path, **kwargs)
+        if progress_callback:
+            progress_callback(100, "Audio transcription complete.")
+        return result
 
     def unload(self) -> None:
         try:

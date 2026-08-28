@@ -63,6 +63,11 @@ import {
     type TranscriptionProgressUpdate,
 } from '@/lib/transcription-progress';
 
+// The diarization endpoint currently rejects audio above 1,400 seconds, and
+// long requests close unreliably near that ceiling. Keep chunks below the
+// duration already verified to complete successfully on this endpoint.
+const OPENAI_DIARIZE_CHUNK_DURATION_SEC = 850;
+
 /**
  * Create an error response
  */
@@ -257,9 +262,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                 (process.env.HF_TOKEN ?? '');
             const minSpeakers = getField('minSpeakers') || '1';
             const maxSpeakers = getField('maxSpeakers') || '10';
+            const diarizationEnabled = getField('diarize') !== 'false';
             const proxyUpload = createStreamingMultipartBody(file, {
                 ...(language ? { language } : {}),
-                ...(hfToken ? { hf_token: hfToken } : {}),
+                diarize: String(diarizationEnabled),
+                ...(diarizationEnabled && hfToken ? { hf_token: hfToken } : {}),
                 min_speakers: minSpeakers,
                 max_speakers: maxSpeakers,
             });
@@ -275,7 +282,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<Transcrip
                     totalChunks: 1,
                     completedChunks: 0,
                 });
-                log(`forwarding to local backend url=${backendUrl} hf_token=${hfToken ? 'provided' : 'env/none'} speakers=${minSpeakers}-${maxSpeakers}`);
+                log(`forwarding to local backend url=${backendUrl} diarize=${diarizationEnabled} hf_token=${diarizationEnabled && hfToken ? 'provided' : 'unused'} speakers=${minSpeakers}-${maxSpeakers}`);
                 // 30-minute timeout — local transcription of long audio files
                 // can take 10-15+ minutes on a MacBook Air.
                 backendRes = await fetch(`${backendUrl}/transcribe`, {

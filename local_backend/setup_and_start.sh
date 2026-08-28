@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 VENV_DIR=".venv"
+DIARIZATION_VENV_DIR=".venv-diarization"
 HOST="127.0.0.1"
 PORT=8001
 
@@ -107,7 +108,7 @@ fi
 printf '%s' "$PROFILE" > "$VENV_DIR/.installed-profile"
 
 if [[ "$PROFILE" == "nvidia-cuda" ]]; then
-    CUDA_LIBRARY_PATH=$("$PY" -c 'import os, nvidia.cublas.lib, nvidia.cudnn.lib; print(os.path.dirname(nvidia.cublas.lib.__file__) + ":" + os.path.dirname(nvidia.cudnn.lib.__file__))') \
+    CUDA_LIBRARY_PATH=$("$PY" -c 'import nvidia.cublas.lib, nvidia.cudnn.lib; print(next(iter(nvidia.cublas.lib.__path__)) + ":" + next(iter(nvidia.cudnn.lib.__path__)))') \
         || fail "Could not resolve the CUDA runtime libraries"
     export LD_LIBRARY_PATH="$CUDA_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
@@ -132,12 +133,15 @@ for pkg in "${REQUIRED_IMPORTS[@]}"; do
     fi
 done
 
-# pyannote is optional (only needed for diarization)
-if "$PY" -c "import pyannote.audio" 2>/dev/null; then
-    ok "  import pyannote.audio (diarization available)"
+# Pyannote is isolated because Torch and Faster Whisper need different CUDA stacks.
+if [[ -x "$DIARIZATION_VENV_DIR/bin/python" ]] \
+    && "$DIARIZATION_VENV_DIR/bin/python" -c "import pyannote.audio" 2>/dev/null; then
+    ok "  import pyannote.audio from isolated runtime (diarization available)"
 else
     echo -e "${YELLOW}⚠${RESET}  import pyannote.audio failed – diarization will be skipped"
-    echo "   If you need diarization, run:  $PIP install 'pyannote.audio>=3.1'"
+    echo "   If you need diarization, run:"
+    echo "     $PYTHON -m venv $SCRIPT_DIR/$DIARIZATION_VENV_DIR"
+    echo "     $SCRIPT_DIR/$DIARIZATION_VENV_DIR/bin/pip install -r $SCRIPT_DIR/requirements/diarization.txt"
 fi
 
 if [[ "$IMPORT_ERRORS" -gt 0 ]]; then

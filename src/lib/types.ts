@@ -90,6 +90,53 @@ export interface LocalRuntimeStatus {
     };
 }
 
+export type LocalJobStatus =
+    | 'queued'
+    | 'processing'
+    | 'cancelling'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
+
+export interface LocalTranscriptionJob {
+    id: string;
+    status: LocalJobStatus;
+    progress: number;
+    message: string;
+    file_name: string;
+    file_size: number;
+    created_at: string;
+    updated_at: string;
+    result: TranscriptionResult | null;
+    error: string | null;
+    output_file: string | null;
+    diarization_enabled?: boolean;
+}
+
+export interface SavedLocalJob {
+    id: string;
+    fileName: string;
+    fileSize: number;
+    createdAt: string;
+    diarizationEnabled?: boolean;
+}
+
+export interface TranscriptionHistoryItem {
+    fileName: string;
+    originalName: string;
+    sizeBytes: number;
+    sourceSizeBytes: number | null;
+    created_at: string;
+    provider: TranscriptionProviderName | null;
+    model: string | null;
+    language: string | null;
+    segmentCount: number;
+    speakerCount: number;
+    durationMs: number | null;
+    previewText: string;
+    hasDiarization: boolean;
+}
+
 /**
  * Source file metadata in output
  */
